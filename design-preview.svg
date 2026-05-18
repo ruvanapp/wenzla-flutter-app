@@ -1,0 +1,139 @@
+<svg width="1440" height="960" viewBox="0 0 1440 960" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1440" y2="960" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8EFE1"/>
+      <stop offset="0.55" stop-color="#EEDDC6"/>
+      <stop offset="1" stop-color="#CDAA72"/>
+    </linearGradient>
+    <linearGradient id="phone" x1="0" y1="0" x2="0" y2="700">
+      <stop stop-color="#FFF9EF"/>
+      <stop offset="1" stop-color="#F1E1CB"/>
+    </linearGradient>
+    <linearGradient id="admin" x1="680" y1="180" x2="1310" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#27231F"/>
+      <stop offset="1" stop-color="#5C4730"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="28" flood-color="#5A3218" flood-opacity="0.22"/>
+    </filter>
+    <style>
+      .title{font:800 64px Georgia,serif;fill:#17130E;letter-spacing:-3px}
+      .sub{font:500 20px Georgia,serif;fill:#6F5A43}
+      .label{font:800 16px Arial,sans-serif;fill:#B65B38;letter-spacing:3px}
+      .h{font:800 28px Georgia,serif;fill:#17130E}
+      .body{font:500 15px Arial,sans-serif;fill:#75614A}
+      .small{font:700 12px Arial,sans-serif;fill:#8A7157}
+      .white{fill:#FFF6E8}
+      .dark{fill:#17130E}
+      .muted{fill:#7C684F}
+      .pillText{font:800 11px Arial,sans-serif;fill:#FFF8EB;letter-spacing:1px}
+      .adminText{font:700 14px Arial,sans-serif;fill:#F8EFE1}
+      .adminMuted{font:500 12px Arial,sans-serif;fill:#D8C3A6}
+      .num{font:800 34px Georgia,serif;fill:#FFF8EB}
+    </style>
+  </defs>
+
+  <rect width="1440" height="960" fill="url(#bg)"/>
+  <circle cx="170" cy="110" r="260" fill="#D6A742" opacity="0.26"/>
+  <circle cx="1260" cy="130" r="220" fill="#53633C" opacity="0.18"/>
+  <circle cx="1040" cy="850" r="260" fill="#B65B38" opacity="0.12"/>
+
+  <text x="80" y="90" class="label">WENZLA MARKETPLACE</text>
+  <text x="80" y="160" class="title">App screen preview</text>
+  <text x="84" y="198" class="sub">Customer app, merchant app, and admin dashboard visual direction.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="92" y="260" width="318" height="620" rx="42" fill="#17130E"/>
+    <rect x="110" y="282" width="282" height="576" rx="32" fill="url(#phone)"/>
+    <rect x="207" y="295" width="88" height="8" rx="4" fill="#2B241D"/>
+    <text x="134" y="344" class="small">CUSTOMER APP</text>
+    <text x="134" y="384" class="h">Find stores near you</text>
+    <rect x="134" y="414" width="234" height="48" rx="16" fill="#FFFFFF" opacity="0.78"/>
+    <text x="154" y="444" class="body">Search: coffee beans</text>
+    <circle cx="344" cy="438" r="15" fill="#B65B38"/>
+    <path d="M339 438h10M344 433v10" stroke="#FFF8EB" stroke-width="2"/>
+    <text x="134" y="498" class="small">MERCHANTS SELLING THIS</text>
+    <g>
+      <rect x="134" y="518" width="234" height="86" rx="22" fill="#FFF9F0"/>
+      <rect x="152" y="536" width="50" height="50" rx="16" fill="#D6A742"/>
+      <text x="216" y="556" class="body" fill="#17130E">Roast House</text>
+      <text x="216" y="579" class="small">$12.50 · 4.8 ★</text>
+      <rect x="306" y="552" width="44" height="24" rx="12" fill="#53633C"/>
+      <text x="319" y="568" class="pillText">BUY</text>
+    </g>
+    <g>
+      <rect x="134" y="622" width="234" height="86" rx="22" fill="#FFF9F0"/>
+      <rect x="152" y="640" width="50" height="50" rx="16" fill="#B65B38"/>
+      <text x="216" y="660" class="body" fill="#17130E">Market Lane</text>
+      <text x="216" y="683" class="small">$10.90 · 4.6 ★</text>
+      <rect x="306" y="656" width="44" height="24" rx="12" fill="#53633C"/>
+      <text x="319" y="672" class="pillText">BUY</text>
+    </g>
+    <rect x="134" y="740" width="234" height="72" rx="24" fill="#27231F"/>
+    <text x="154" y="768" class="pillText">TRACK ORDER</text>
+    <text x="154" y="794" class="white" style="font:800 18px Georgia,serif">Preparing → Delivery</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="452" y="260" width="318" height="620" rx="42" fill="#17130E"/>
+    <rect x="470" y="282" width="282" height="576" rx="32" fill="#F7F0E4"/>
+    <rect x="567" y="295" width="88" height="8" rx="4" fill="#2B241D"/>
+    <text x="494" y="344" class="small">MERCHANT APP</text>
+    <text x="494" y="384" class="h">Orders live now</text>
+    <rect x="494" y="414" width="234" height="92" rx="24" fill="#53633C"/>
+    <text x="516" y="450" class="white" style="font:800 30px Georgia,serif">$4,820</text>
+    <text x="516" y="478" class="pillText">SALES THIS MONTH</text>
+    <rect x="494" y="526" width="108" height="72" rx="20" fill="#FFF9F0"/>
+    <text x="514" y="556" class="h" style="font-size:22px">18</text>
+    <text x="514" y="580" class="small">Orders</text>
+    <rect x="620" y="526" width="108" height="72" rx="20" fill="#FFF9F0"/>
+    <text x="640" y="556" class="h" style="font-size:22px">$482</text>
+    <text x="640" y="580" class="small">Commission</text>
+    <text x="494" y="638" class="small">NEW ORDER</text>
+    <rect x="494" y="656" width="234" height="104" rx="24" fill="#FFF9F0"/>
+    <text x="516" y="686" class="body" fill="#17130E">Ahmed Mohamed</text>
+    <text x="516" y="710" class="small">2 items · Downtown address</text>
+    <rect x="516" y="728" width="86" height="24" rx="12" fill="#D6A742"/>
+    <text x="532" y="744" class="pillText" fill="#17130E">ACCEPT</text>
+    <rect x="612" y="728" width="92" height="24" rx="12" fill="#B65B38"/>
+    <text x="628" y="744" class="pillText">UPDATE</text>
+    <rect x="494" y="782" width="234" height="42" rx="15" fill="#27231F"/>
+    <text x="540" y="809" class="pillText">ADD / EDIT PRODUCTS</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="830" y="245" width="520" height="420" rx="36" fill="url(#admin)"/>
+    <text x="868" y="302" class="label" fill="#D6A742">ADMIN DASHBOARD</text>
+    <text x="868" y="350" class="white" style="font:800 42px Georgia,serif;letter-spacing:-1.8px">Marketplace command room</text>
+    <rect x="868" y="386" width="94" height="88" rx="22" fill="#FFF8EB" opacity="0.12"/>
+    <text x="890" y="426" class="num">42</text>
+    <text x="890" y="454" class="adminMuted">Merchants</text>
+    <rect x="978" y="386" width="94" height="88" rx="22" fill="#FFF8EB" opacity="0.12"/>
+    <text x="1000" y="426" class="num">318</text>
+    <text x="1000" y="454" class="adminMuted">Products</text>
+    <rect x="1088" y="386" width="94" height="88" rx="22" fill="#FFF8EB" opacity="0.12"/>
+    <text x="1110" y="426" class="num">94</text>
+    <text x="1110" y="454" class="adminMuted">Orders</text>
+    <rect x="1198" y="386" width="114" height="88" rx="22" fill="#D6A742"/>
+    <text x="1218" y="426" class="dark" style="font:800 30px Georgia,serif">$2.1k</text>
+    <text x="1218" y="454" class="small" fill="#17130E">Commission</text>
+    <rect x="868" y="510" width="210" height="110" rx="24" fill="#FFF8EB" opacity="0.12"/>
+    <text x="890" y="542" class="adminText">Merchant approvals</text>
+    <text x="890" y="574" class="adminMuted">Olive Basket</text>
+    <rect x="990" y="558" width="66" height="22" rx="11" fill="#D6A742"/>
+    <text x="1003" y="573" class="pillText" fill="#17130E">PENDING</text>
+    <text x="890" y="604" class="adminMuted">Roast House</text>
+    <rect x="990" y="588" width="66" height="22" rx="11" fill="#53633C"/>
+    <text x="1005" y="603" class="pillText">LIVE</text>
+    <rect x="1100" y="510" width="212" height="110" rx="24" fill="#FFF8EB" opacity="0.12"/>
+    <text x="1122" y="542" class="adminText">Reports</text>
+    <path d="M1124 594C1148 565 1172 582 1190 553C1212 520 1239 565 1288 536" stroke="#D6A742" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="846" y="700" width="488" height="96" rx="30" fill="#FFF8EB" opacity="0.78"/>
+    <circle cx="894" cy="748" r="24" fill="#B65B38"/>
+    <text x="934" y="738" class="body" fill="#17130E">Business model</text>
+    <text x="934" y="766" class="h" style="font-size:24px">Admin earns percentage commission from every delivered order.</text>
+  </g>
+</svg>

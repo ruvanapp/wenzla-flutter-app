@@ -1,0 +1,28 @@
+name: wenzla_merchant_app
+description: Merchant mobile app for سوق العسل marketplace.
+publish_to: 'none'
+version: 1.0.4+9
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+  firebase_core: ^3.15.2
+  firebase_analytics: ^11.3.3
+  firebase_crashlytics: ^4.1.3
+  firebase_messaging: ^15.2.5
+  flutter_local_notifications: ^18.0.1
+  image_picker: ^1.1.2
+  http_parser: ^4.1.2
+  socket_io_client: ^3.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env
+.env.local
+dist/
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+coverage/
+backend/uploads/*
+!backend/uploads/.gitkeep

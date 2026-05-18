@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "728147437570",
+    "project_id": "wenzla-marketplace",
+    "storage_bucket": "wenzla-marketplace.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:728147437570:android:cf77bb4d9eb8ce7a20df1b",
+        "android_client_info": {
+          "package_name": "com.wenzla.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEGOJL3Ni4_vhYIPQ716U6DaJoxt1NAOs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
