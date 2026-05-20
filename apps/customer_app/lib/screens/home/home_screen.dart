@@ -17,10 +17,26 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer?                        _bannerTimer;
   AppState?                     _appState;
 
+  // Wide-format Pexels honey images (1200×400)
   static const _banners = [
-    _BannerData('عسل سدر جبلي فاخر', 'من مناحل عضوية معتمدة', kRoyal, kHoney, '🍯'),
-    _BannerData('عروض الموسم', 'خصم حتى ٣٠٪ على منتجات العسل', kDarkHoney, kAmber, '🐝'),
-    _BannerData('غذاء الملكات الطبيعي', 'تقوية المناعة والطاقة', Color(0xFF2D5A1B), Color(0xFF81C784), '👑'),
+    _BannerData(
+      'عسل سدر جبلي فاخر',
+      'من مناحل عضوية معتمدة',
+      kRoyal, kHoney, '🍯',
+      imageUrl: 'https://images.pexels.com/photos/1638280/pexels-photo-1638280.jpeg?auto=compress&cs=tinysrgb&w=1200&h=400&fit=crop',
+    ),
+    _BannerData(
+      'عروض الموسم',
+      'خصم حتى ٣٠٪ على منتجات العسل',
+      kDarkHoney, kAmber, '🐝',
+      imageUrl: 'https://images.pexels.com/photos/1207972/pexels-photo-1207972.jpeg?auto=compress&cs=tinysrgb&w=1200&h=400&fit=crop',
+    ),
+    _BannerData(
+      'غذاء الملكات الطبيعي',
+      'تقوية المناعة والطاقة',
+      Color(0xFF2D5A1B), Color(0xFF81C784), '👑',
+      imageUrl: 'https://images.pexels.com/photos/4505629/pexels-photo-4505629.jpeg?auto=compress&cs=tinysrgb&w=1200&h=400&fit=crop',
+    ),
   ];
 
   @override
@@ -273,49 +289,95 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildBannerSlide(_BannerData d) => Container(
     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     decoration: BoxDecoration(
-      gradient: LinearGradient(
-        colors: [d.color1, d.color2],
-        begin: Alignment.centerRight,
-        end:   Alignment.centerLeft,
-      ),
+      gradient: d.imageUrl == null
+          ? LinearGradient(
+              colors: [d.color1, d.color2],
+              begin: Alignment.centerRight,
+              end:   Alignment.centerLeft,
+            )
+          : null,
       borderRadius: BorderRadius.circular(20),
       boxShadow:    kLiftedShadow,
     ),
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Row(
-        textDirection: TextDirection.rtl,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment:  MainAxisAlignment.center,
-              children: [
-                Text(d.title, style: const TextStyle(
-                  fontFamily: 'Cairo', fontWeight: FontWeight.w800,
-                  fontSize: 18, color: Colors.white),
-                  maxLines: 2, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 6),
-                Text(d.subtitle, style: const TextStyle(
-                  fontFamily: 'Cairo', fontSize: 13,
-                  color: Colors.white70)),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white38)),
-                  child: const Text('تسوق الآن', style: TextStyle(
-                    fontFamily: 'Cairo', fontWeight: FontWeight.w700,
-                    fontSize: 12, color: Colors.white)),
+    clipBehavior: Clip.antiAlias,
+    child: Stack(
+      fit: StackFit.expand,
+      children: [
+        // Background image (or gradient fallback)
+        if (d.imageUrl != null)
+          Image.network(
+            d.imageUrl!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [d.color1, d.color2],
+                  begin: Alignment.centerRight,
+                  end:   Alignment.centerLeft,
                 ),
-              ],
+              ),
+            ),
+          )
+        else
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [d.color1, d.color2],
+                begin: Alignment.centerRight,
+                end:   Alignment.centerLeft,
+              ),
             ),
           ),
-          Text(d.emoji, style: const TextStyle(fontSize: 72)),
-        ],
-      ),
+        // Darkening overlay so text stays readable
+        if (d.imageUrl != null)
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xCC000000), Color(0x55000000)],
+                begin: Alignment.centerRight,
+                end:   Alignment.centerLeft,
+              ),
+            ),
+          ),
+        // Text content
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment:  MainAxisAlignment.center,
+                  children: [
+                    Text(d.title, style: const TextStyle(
+                      fontFamily: 'Cairo', fontWeight: FontWeight.w800,
+                      fontSize: 18, color: Colors.white),
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 6),
+                    Text(d.subtitle, style: const TextStyle(
+                      fontFamily: 'Cairo', fontSize: 13,
+                      color: Colors.white70)),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white38)),
+                      child: const Text('تسوق الآن', style: TextStyle(
+                        fontFamily: 'Cairo', fontWeight: FontWeight.w700,
+                        fontSize: 12, color: Colors.white)),
+                    ),
+                  ],
+                ),
+              ),
+              if (d.imageUrl == null)
+                Text(d.emoji, style: const TextStyle(fontSize: 72)),
+            ],
+          ),
+        ),
+      ],
     ),
   );
 
@@ -1207,5 +1269,6 @@ class _CategoryStoresSheet extends StatelessWidget {
 class _BannerData {
   final String title, subtitle, emoji;
   final Color color1, color2;
-  const _BannerData(this.title, this.subtitle, this.color1, this.color2, this.emoji);
+  final String? imageUrl;
+  const _BannerData(this.title, this.subtitle, this.color1, this.color2, this.emoji, {this.imageUrl});
 }
