@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { setAdminToken } from '../lib/api';
+import HomeCmsPanel from './components/HomeCmsPanel';
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'https://wenzla-backend-production.up.railway.app';
 
@@ -1197,17 +1198,8 @@ export default function AdminClient() {
              ════════════════════════════════════════════════════════ */}
           {activePanel === 'home_cms' && (
             <section className="panel" style={{ overflow: 'visible', borderRadius: 30 }}>
-              <div className="panel-header">
-                <h2 style={{ margin: 0, fontSize: 22 }}>إدارة محتوى الصفحة الرئيسية</h2>
-                <button className="action-btn refresh" onClick={loadCmsData}>🔄 تحديث</button>
-              </div>
-
-              {cmsMessage && (
-                <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 10, padding: '10px 16px', marginBottom: 16, color: '#92400e', fontFamily: 'Cairo', display: 'flex', justifyContent: 'space-between' }}>
-                  {cmsMessage}
-                  <button onClick={() => setCmsMessage('')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
-                </div>
-              )}
+              <HomeCmsPanel token={token!} apiUrl={apiUrl} />
+              {false && <>
 
               <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
                 {([
@@ -1404,6 +1396,7 @@ export default function AdminClient() {
                   </p>
                 </div>
               )}
+              </>}
             </section>
           )}
 
