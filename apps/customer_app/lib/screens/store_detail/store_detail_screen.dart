@@ -69,7 +69,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
     final address  = (store['address']     as String?) ?? '';
     final rating   = double.tryParse(store['averageRating']?.toString() ?? '0') ?? 0;
     final revCount = (store['reviewCount'] as int?)    ?? 0;
-    final coverUrl = (store['coverImage']  as String?);
+    final coverUrl = (store['bannerUrl'] ?? store['coverImage']) as String?;
     final logoUrl  = (store['logoUrl']     as String?);
     final products = st.storeProducts;
     final reviews  = st.storeReviews;

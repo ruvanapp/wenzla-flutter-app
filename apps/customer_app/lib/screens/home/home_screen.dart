@@ -508,8 +508,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildFeaturedStoreCard(Map<String, dynamic> store) {
     final name     = (store['storeName'] as String?) ?? '';
+    final logoUrl  = (store['logoUrl'] as String?);
     final rating   = double.tryParse(store['averageRating']?.toString() ?? '0') ?? 0;
     final revCount = (store['reviewCount'] as int?) ?? 0;
+
+    Widget _logoArea() {
+      const radius = BorderRadius.vertical(top: Radius.circular(16));
+      if (logoUrl != null && logoUrl.isNotEmpty) {
+        return ClipRRect(
+          borderRadius: radius,
+          child: Image.network(
+            logoUrl,
+            height: 90, width: double.infinity, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _gradientLogoBox(name, 90, 60, radius),
+          ),
+        );
+      }
+      return _gradientLogoBox(name, 90, 60, radius);
+    }
 
     return TapScaleWidget(
       onTap: () => context.read<AppState>().openStore(store['id'] as String),
@@ -522,16 +538,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: Column(
           children: [
-            Container(
-              height: 90,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [kSurfaceWarm, kBorder],
-                  begin: Alignment.topLeft, end: Alignment.bottomRight),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Center(child: StoreLogoWidget(storeName: name, size: 60)),
-            ),
+            _logoArea(),
             Padding(
               padding: const EdgeInsets.all(10),
               child: Column(
@@ -728,9 +735,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildStoreGridCard(Map<String, dynamic> store) {
     final name      = (store['storeName'] as String?) ?? '';
+    final logoUrl   = (store['logoUrl'] as String?);
     final rating    = double.tryParse(store['averageRating']?.toString() ?? '0') ?? 0;
     final revCount  = (store['reviewCount'] as int?) ?? 0;
     final prodCount = (store['_count']?['products'] as int?) ?? 0;
+
+    Widget _logoArea() {
+      if (logoUrl != null && logoUrl.isNotEmpty) {
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          child: Image.network(
+            logoUrl,
+            height: 110, width: double.infinity, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _gradientLogoBox(name, 110, 68,
+              const BorderRadius.vertical(top: Radius.circular(16))),
+          ),
+        );
+      }
+      return _gradientLogoBox(name, 110, 68,
+        const BorderRadius.vertical(top: Radius.circular(16)));
+    }
 
     return TapScaleWidget(
       onTap: () => context.read<AppState>().openStore(store['id'] as String),
@@ -742,16 +766,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              height: 110,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [kSurfaceWarm, Color(0xFFEEDDBA)],
-                  begin: Alignment.topLeft, end: Alignment.bottomRight),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Center(child: StoreLogoWidget(storeName: name, size: 68)),
-            ),
+            _logoArea(),
             Padding(
               padding: const EdgeInsets.all(10),
               child: Column(
@@ -787,6 +802,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ── Search overlay ──────────────────────────────────────────────────────────
+  Widget _gradientLogoBox(String name, double height, double logoSize, BorderRadius radius) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [kSurfaceWarm, Color(0xFFEEDDBA)],
+          begin: Alignment.topLeft, end: Alignment.bottomRight),
+        borderRadius: radius,
+      ),
+      child: Center(child: StoreLogoWidget(storeName: name, size: logoSize)),
+    );
+  }
+
   void _openSearchOverlay(BuildContext context) {
     showGeneralDialog<void>(
       context: context,
