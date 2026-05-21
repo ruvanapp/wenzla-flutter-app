@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
@@ -30,61 +31,70 @@ Future<void> _bgHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
 }
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp();
+    await Firebase.initializeApp();
 
-  FlutterError.onError =
-      FirebaseCrashlytics.instance.recordFlutterFatalError;
-  PlatformDispatcher.instance.onError = (error, stack) {
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-    return true;
-  };
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      if (kDebugMode) {
+        debugPrint(details.exceptionAsString());
+        debugPrintStack(stackTrace: details.stack);
+      }
+      FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      if (kDebugMode) {
+        debugPrint(error.toString());
+        debugPrintStack(stackTrace: stack);
+      }
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
 
-  await FirebaseMessaging.instance.requestPermission(
-    alert: true, badge: true, sound: true,
-  );
-  FirebaseMessaging.onBackgroundMessage(_bgHandler);
+    await FirebaseMessaging.instance.requestPermission(
+      alert: true, badge: true, sound: true,
+    );
+    FirebaseMessaging.onBackgroundMessage(_bgHandler);
 
-  await _localNotifications.initialize(
-    const InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-    ),
-  );
-  await _localNotifications
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(_orderChannel);
-
-  // Show foreground notifications with sound + vibration + grouping
-  FirebaseMessaging.onMessage.listen((RemoteMessage msg) {
-    final n = msg.notification;
-    if (n == null) return;
-    _localNotifications.show(
-      n.hashCode,
-      n.title,
-      n.body,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          _orderChannel.id,
-          _orderChannel.name,
-          channelDescription: _orderChannel.description,
-          icon: '@mipmap/ic_launcher',
-          importance: Importance.high,
-          priority: Priority.high,
-          enableVibration: true,
-          playSound: true,
-          groupKey: _kOrderGroupKey,
-        ),
+    await _localNotifications.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       ),
     );
-  });
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(_orderChannel);
 
-  runZonedGuarded(
-    () => runApp(const SouqAlAsalApp()),
-    (error, stack) =>
-        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true),
-  );
+    FirebaseMessaging.onMessage.listen((RemoteMessage msg) {
+      final n = msg.notification;
+      if (n == null) return;
+      _localNotifications.show(
+        n.hashCode,
+        n.title,
+        n.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            _orderChannel.id,
+            _orderChannel.name,
+            channelDescription: _orderChannel.description,
+            icon: '@mipmap/ic_launcher',
+            importance: Importance.high,
+            priority: Priority.high,
+            enableVibration: true,
+            playSound: true,
+            groupKey: _kOrderGroupKey,
+          ),
+        ),
+      );
+    });
+
+    runApp(const SouqAlAsalApp());
+  }, (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+  });
 }
 
 class SouqAlAsalApp extends StatelessWidget {

@@ -26,7 +26,7 @@ class _CartScreenState extends State<CartScreen> {
       appBar: _buildAppBar(context),
       body: Consumer<AppState>(
         builder: (context, st, _) {
-          if (st.cart.isEmpty) return const CartEmptyState();
+          if (st.cart.isEmpty) return const _CartEmptyBody();
           return _CartContent(
             cart: st.cart.cast<Map<String, dynamic>>(),
             state: st,
@@ -121,6 +121,24 @@ class _CartScreenState extends State<CartScreen> {
   }
 }
 
+class _CartEmptyBody extends StatelessWidget {
+  const _CartEmptyBody();
+
+  @override
+  Widget build(BuildContext context) {
+    final height = MediaQuery.of(context).size.height * 0.72;
+    return ListView(
+      physics: const BouncingScrollPhysics(),
+      children: [
+        SizedBox(
+          height: height,
+          child: const CartEmptyState(),
+        ),
+      ],
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Cart content — scrollable body + sticky checkout bar
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,6 +165,44 @@ class _CartContent extends StatelessWidget {
   String? get _merchantId =>
       cart.isNotEmpty ? cart.first['merchantId'] as String? : null;
 
+  Map<String, dynamic> get _cartStoreSeed => {
+        'id': _merchantId,
+        'storeName': _storeName,
+        if ((_storeLogoUrl ?? '').isNotEmpty) 'logoUrl': _storeLogoUrl,
+      };
+
+  Future<void> _openCartStore(BuildContext context) async {
+    final merchantId = _merchantId;
+    if (merchantId == null || merchantId.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تعذر فتح المتجر حالياً',
+            style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final opened = await state.openStoreWithData(_cartStoreSeed);
+
+    if (!context.mounted) return;
+    if (!opened || (!state.loadingStore && state.selectedStore == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تعذر تحميل بيانات المتجر',
+            style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final total = state.cartTotal + deliveryFee - couponDiscount;
@@ -162,7 +218,7 @@ class _CartContent extends StatelessWidget {
                 storeName: _storeName,
                 storeLogoUrl: _storeLogoUrl,
                 onViewStore: _merchantId != null
-                    ? () => Navigator.pop(context) // go back to store
+                    ? () => _openCartStore(context)
                     : null,
               ),
               const SizedBox(height: 8),

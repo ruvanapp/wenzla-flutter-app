@@ -223,13 +223,48 @@ class AppState extends ChangeNotifier {
     try {
       final api = ApiService(token: _token);
       final res = await api.get('/customer/stores/$storeId');
+      debugPrint('[openStore] storeId=$storeId responseType=${res.runtimeType}');
       if (res is Map) {
         _selectedStore  = Map<String, dynamic>.from(res);
         _storeProducts  = res['products'] is List ? List.from(res['products']) : [];
         _storeReviews   = res['reviews']  is List ? List.from(res['reviews'])  : [];
+        debugPrint('[openStore] selectedStore keys=${_selectedStore?.keys.toList()} products=${_storeProducts.length} reviews=${_storeReviews.length}');
+      } else {
+        _screen = _bottomIndexToScreen(_previousBottomIndex);
       }
     } catch (_) {
-      // On network failure: store stays empty; user can still go back
+      _screen = _bottomIndexToScreen(_previousBottomIndex);
+    } finally {
+      _loadingStore = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> openStoreWithData(Map<String, dynamic> store) async {
+    final storeId = (store['id'] as String?)?.trim();
+    if (storeId == null || storeId.isEmpty) return false;
+
+    _previousBottomIndex = _bottomIndex;
+    _selectedStoreId = storeId;
+    _selectedStore = Map<String, dynamic>.from(store);
+    _storeProducts = store['products'] is List ? List.from(store['products']) : [];
+    _storeReviews = store['reviews'] is List ? List.from(store['reviews']) : [];
+    _loadingStore = true;
+    showScreen(AppScreen.storeDetail);
+
+    try {
+      final api = ApiService(token: _token);
+      final res = await api.get('/customer/stores/$storeId');
+      debugPrint('[openStoreWithData] storeId=$storeId responseType=${res.runtimeType}');
+      if (res is Map) {
+        _selectedStore = Map<String, dynamic>.from(res);
+        _storeProducts = res['products'] is List ? List.from(res['products']) : _storeProducts;
+        _storeReviews = res['reviews'] is List ? List.from(res['reviews']) : _storeReviews;
+        return true;
+      }
+      return true;
+    } catch (_) {
+      return _selectedStore != null;
     } finally {
       _loadingStore = false;
       notifyListeners();

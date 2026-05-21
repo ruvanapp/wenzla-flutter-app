@@ -45,15 +45,25 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
   Widget build(BuildContext context) {
     final st    = context.watch<AppState>();
     final store = st.selectedStore;
+    debugPrint(
+      '[StoreDetailScreen] loading=${st.loadingStore} '
+      'storeKeys=${store?.keys.toList()} '
+      'products=${st.storeProducts.length} '
+      'reviews=${st.storeReviews.length}',
+    );
+    final hasStoreData = store != null &&
+        ((store['storeName'] as String?)?.trim().isNotEmpty == true ||
+            (store['id'] as String?)?.trim().isNotEmpty == true);
 
     return Scaffold(
       backgroundColor: kBackground,
       body: st.loadingStore
-          ? const Center(child: CircularProgressIndicator(color: kHoney))
-          : store == null
+          ? const _StoreLoadingState()
+          : !hasStoreData
               ? EmptyState(
                   icon: '🏪',
-                  title: 'لم يتم العثور على المتجر',
+                  title: 'تعذر تحميل بيانات المتجر',
+                  subtitle: 'حاول الرجوع وإعادة فتح المتجر مرة أخرى',
                   onAction: () => context.read<AppState>().closeStore(),
                 )
               : _buildBody(context, st, store),
@@ -73,6 +83,10 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
     final logoUrl  = (store['logoUrl']     as String?);
     final products = st.storeProducts;
     final reviews  = st.storeReviews;
+
+    if (name.trim().isEmpty && products.isEmpty && reviews.isEmpty) {
+      return const _StoreRenderFallbackState();
+    }
 
     return CustomScrollView(
       // ClampingScrollPhysics prevents overscroll which can cause
@@ -312,7 +326,8 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
       BuildContext context, List<dynamic> products) {
     if (products.isEmpty) {
       return [
-        const SliverToBoxAdapter(
+        const SliverFillRemaining(
+          hasScrollBody: false,
           child: EmptyState(icon: '📦', title: 'لا توجد منتجات حالياً'),
         ),
       ];
@@ -351,7 +366,8 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
 
     if (fields.isEmpty) {
       return [
-        const SliverToBoxAdapter(
+        const SliverFillRemaining(
+          hasScrollBody: false,
           child: EmptyState(icon: 'ℹ️', title: 'لا توجد معلومات إضافية'),
         ),
       ];
@@ -477,12 +493,18 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
     ];
 
     return [
-      SliverPadding(
-        padding: const EdgeInsets.all(16),
-        sliver: SliverList(
-          delegate: SliverChildListDelegate(items),
+      if (reviews.isEmpty && !st.isLoggedIn)
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: EmptyState(icon: '⭐', title: 'لا توجد تقييمات بعد'),
+        )
+      else
+        SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate(items),
+          ),
         ),
-      ),
     ];
   }
 
@@ -848,4 +870,79 @@ class _InfoItem {
   final String   label;
   final String   value;
   const _InfoItem(this.icon, this.label, this.value);
+}
+
+class _StoreLoadingState extends StatelessWidget {
+  const _StoreLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          CircularProgressIndicator(color: kHoney),
+          SizedBox(height: 14),
+          Text(
+            'جاري تحميل المتجر...',
+            style: TextStyle(
+              fontFamily: 'Cairo',
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              color: kTextBrown,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StoreRenderFallbackState extends StatelessWidget {
+  const _StoreRenderFallbackState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              '🏪',
+              style: TextStyle(fontSize: 52),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'تم فتح صفحة المتجر لكن المحتوى غير جاهز بعد',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+                color: kTextDark,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'يمكنك الرجوع ثم المحاولة مرة أخرى بأمان',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: 13,
+                color: kTextMuted,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            HoneyButton(
+              label: 'الرجوع',
+              onPressed: () => context.read<AppState>().closeStore(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

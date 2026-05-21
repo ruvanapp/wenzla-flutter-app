@@ -181,7 +181,7 @@ class _QtyControl extends StatelessWidget {
   }
 }
 
-class _QtyBtn extends StatelessWidget {
+class _QtyBtn extends StatefulWidget {
   final IconData icon;
   final Color iconColor;
   final VoidCallback onTap;
@@ -190,14 +190,32 @@ class _QtyBtn extends StatelessWidget {
       {required this.icon, required this.iconColor, required this.onTap});
 
   @override
+  State<_QtyBtn> createState() => _QtyBtnState();
+}
+
+class _QtyBtnState extends State<_QtyBtn> {
+  bool _busy = false;
+
+  Future<void> _handleTap() async {
+    if (_busy || !mounted) return;
+    setState(() => _busy = true);
+    widget.onTap();
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return TapScaleWidget(
-      onTap: onTap,
-      child: Container(
+      onTap: _busy ? null : _handleTap,
+      child: Opacity(
+        opacity: _busy ? 0.6 : 1,
+        child: Container(
         width: 34,
         height: 34,
         alignment: Alignment.center,
-        child: Icon(icon, size: 18, color: iconColor),
+        child: Icon(widget.icon, size: 18, color: widget.iconColor),
+        ),
       ),
     );
   }
