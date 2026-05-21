@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
@@ -41,6 +42,8 @@ class AppState extends ChangeNotifier {
     _token = saved.token;
     _user  = saved.user;
     notifyListeners();
+    // Flush any FCM token that arrived before auth was restored
+    if (isLoggedIn) await _flushFcmToken();
   }
 
   Future<bool> sendOtp(String phone) async {
@@ -64,6 +67,8 @@ class AppState extends ChangeNotifier {
         _user  = res['user']  as Map<String, dynamic>?;
         await StorageService.saveAuth(_token!, _user ?? {});
         notifyListeners();
+        // Flush any FCM token that arrived before login completed
+        unawaited(_flushFcmToken());
         return true;
       }
       return false;
@@ -80,11 +85,24 @@ class AppState extends ChangeNotifier {
     showScreen(AppScreen.home, bottomIndex: 0);
   }
 
+  // ── FCM token — pending-flush pattern ─────────────────────────────────────
+  String? _pendingFcmToken;
+
+  /// Called by main.dart whenever Firebase provides/refreshes a token.
+  /// Caches the token and sends it to the backend if already logged in.
   Future<void> updateFcmToken(String fcmToken) async {
-    if (!isLoggedIn) return;
+    _pendingFcmToken = fcmToken;   // always cache
+    if (!isLoggedIn) return;       // will be flushed after login / auth restore
+    await _flushFcmToken();
+  }
+
+  /// Sends the cached FCM token to the backend. No-op if no token or not logged in.
+  Future<void> _flushFcmToken() async {
+    final t = _pendingFcmToken;
+    if (t == null || t.isEmpty || !isLoggedIn) return;
     try {
       final api = ApiService(token: _token);
-      await api.patch('/auth/customer/fcm-token', {'fcmToken': fcmToken}, auth: true);
+      await api.patch('/auth/customer/fcm-token', {'fcmToken': t}, auth: true);
     } catch (_) {
       // Non-critical — notifications may not work but app continues
     }
@@ -132,12 +150,14 @@ class AppState extends ChangeNotifier {
   List<dynamic> _homeSections      = [];
   List<dynamic> _homeCmsCategories = [];
   List<dynamic> _featuredStores    = [];
+  bool          _cmsLoading        = false;
 
   List<dynamic> get homeBanners       => _homeBanners;
   List<dynamic> get homePromotions    => _homePromotions;
   List<dynamic> get homeSections      => _homeSections;
   List<dynamic> get homeCmsCategories => _homeCmsCategories;
   List<dynamic> get featuredStores    => _featuredStores;
+  bool          get cmsLoading        => _cmsLoading;
 
   /// Whether the CMS has categories configured (to decide fallback vs CMS rendering)
   bool get hasCmsCategories => _homeCmsCategories.isNotEmpty;
@@ -145,19 +165,23 @@ class AppState extends ChangeNotifier {
   bool get hasFeaturedStores => _featuredStores.isNotEmpty;
 
   Future<void> loadHomeCms() async {
+    _cmsLoading = true;
+    notifyListeners();
     try {
       final api = ApiService(token: _token);
       final res = await api.get('/home-cms/public');
       if (res is Map) {
-        _homeBanners       = res['banners']       is List ? List.from(res['banners'])       : [];
-        _homePromotions    = res['promotions']    is List ? List.from(res['promotions'])    : [];
-        _homeSections      = res['sections']      is List ? List.from(res['sections'])      : [];
-        _homeCmsCategories = res['categories']    is List ? List.from(res['categories'])    : [];
+        _homeBanners       = res['banners']        is List ? List.from(res['banners'])        : [];
+        _homePromotions    = res['promotions']     is List ? List.from(res['promotions'])     : [];
+        _homeSections      = res['sections']       is List ? List.from(res['sections'])       : [];
+        _homeCmsCategories = res['categories']     is List ? List.from(res['categories'])     : [];
         _featuredStores    = res['featuredStores'] is List ? List.from(res['featuredStores']) : [];
-        notifyListeners();
       }
     } catch (_) {
-      // silently fail — home screen falls back to static content
+      // silently fail — CMS content remains empty, app shows skeleton
+    } finally {
+      _cmsLoading = false;
+      notifyListeners();
     }
   }
 

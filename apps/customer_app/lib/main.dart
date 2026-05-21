@@ -101,6 +101,7 @@ class _AppRootState extends State<_AppRoot> {
   void initState() {
     super.initState();
     _registerFcm();
+    _setupNotificationTapHandlers();
   }
 
   Future<void> _registerFcm() async {
@@ -111,6 +112,26 @@ class _AppRootState extends State<_AppRoot> {
     FirebaseMessaging.instance.onTokenRefresh.listen((t) {
       if (mounted) context.read<AppState>().updateFcmToken(t);
     });
+  }
+
+  void _setupNotificationTapHandlers() {
+    // App killed → tapped notification that launched it
+    FirebaseMessaging.instance.getInitialMessage().then((msg) {
+      if (msg != null && mounted) _handleTap(msg);
+    });
+    // App backgrounded → tapped notification to resume
+    FirebaseMessaging.onMessageOpenedApp.listen((msg) {
+      if (mounted) _handleTap(msg);
+    });
+  }
+
+  void _handleTap(RemoteMessage msg) {
+    final type = msg.data['type'] ?? '';
+    if (type == 'order_update' || type == 'order_placed' ||
+        type == 'order_confirmed' || type == 'order_shipped' ||
+        type == 'order_delivered') {
+      context.read<AppState>().showScreen(AppScreen.orders, bottomIndex: 1);
+    }
   }
 
   @override
