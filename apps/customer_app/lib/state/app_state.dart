@@ -330,6 +330,14 @@ class AppState extends ChangeNotifier {
   String? get cartMerchantId =>
       _cart.isEmpty ? null : (_cart.first['merchantId'] as String?);
 
+  /// Returns the store name from the first cart item, for display in CartStoreHeader.
+  String get cartStoreName =>
+      _cart.isEmpty ? '' : (_cart.first['storeName'] as String? ?? '');
+
+  /// Returns the store logo URL from the first cart item, for display in CartStoreHeader.
+  String? get cartStoreLogoUrl =>
+      _cart.isEmpty ? null : (_cart.first['storeLogoUrl'] as String?);
+
   /// Adds [product] to the cart.
   /// Returns [true] if the item was added/incremented.
   /// Returns [false] if the cart already contains items from a DIFFERENT store

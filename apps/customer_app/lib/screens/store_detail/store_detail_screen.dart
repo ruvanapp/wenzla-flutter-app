@@ -584,11 +584,15 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
                       GestureDetector(
                         onTap: () async {
                           final st      = context.read<AppState>();
-                          final storeId = st.selectedStore?['id'] as String?;
-                          // Inject merchantId so single-store rule and checkout both work
+                          final storeId  = st.selectedStore?['id'] as String?;
+                          final sName    = (st.selectedStore?['storeName'] as String?) ?? '';
+                          final sLogoUrl = (st.selectedStore?['logoUrl']   as String?);
+                          // Inject merchantId + storeName + storeLogoUrl so cart header works
                           final item = <String, dynamic>{
                             ...Map<String, dynamic>.from(p),
-                            if (storeId != null) 'merchantId': storeId,
+                            if (storeId   != null) 'merchantId':    storeId,
+                            if (sName.isNotEmpty)  'storeName':     sName,
+                            if (sLogoUrl  != null) 'storeLogoUrl':  sLogoUrl,
                           };
                           final added = st.addToCart(item);
                           if (added) {

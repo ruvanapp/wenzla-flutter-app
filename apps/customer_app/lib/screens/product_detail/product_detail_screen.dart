@@ -259,11 +259,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   label: stock == 0 ? 'نفد من المخزون' : 'أضف إلى السلة',
                   onPressed: stock == 0 ? null : () async {
                     final appState = context.read<AppState>();
-                    // Inject merchantId from current store (fallback to existing field)
-                    final storeId = appState.selectedStore?['id'] as String?;
+                    // Inject merchantId + storeName + storeLogoUrl so cart header works
+                    final storeId  = appState.selectedStore?['id'] as String?;
+                    final sName    = (appState.selectedStore?['storeName'] as String?) ?? '';
+                    final sLogoUrl = (appState.selectedStore?['logoUrl']   as String?);
                     final item = <String, dynamic>{
                       ...Map<String, dynamic>.from(product),
-                      if (storeId != null) 'merchantId': storeId,
+                      if (storeId   != null) 'merchantId':   storeId,
+                      if (sName.isNotEmpty)  'storeName':    sName,
+                      if (sLogoUrl  != null) 'storeLogoUrl': sLogoUrl,
                     };
                     final added = appState.addToCart(item, qty: _qty);
                     if (added) {
