@@ -30,12 +30,16 @@ final FlutterLocalNotificationsPlugin _merchantLocalNotifications =
     FlutterLocalNotificationsPlugin();
 final FirebaseAnalytics _merchantAnalytics = FirebaseAnalytics.instance;
 
+const _kMerchantGroupKey = 'com.wenzla.merchant.order_updates';
+
 const AndroidNotificationChannel _merchantOrderChannel =
     AndroidNotificationChannel(
   'wenzla_merchant_notifications',
   'تنبيهات التاجر',
   description: 'إشعارات الطلبات والتنبيهات العامة للتاجر',
   importance: Importance.high,
+  enableVibration: true,
+  playSound: true,
 );
 
 @pragma('vm:entry-point')
@@ -247,6 +251,11 @@ class _MerchantHomeState extends State<MerchantHome> {
               _merchantOrderChannel.name,
               channelDescription: _merchantOrderChannel.description,
               icon: '@mipmap/ic_launcher',
+              importance: Importance.high,
+              priority: Priority.high,
+              enableVibration: true,
+              playSound: true,
+              groupKey: _kMerchantGroupKey,
             ),
           ),
         );
@@ -257,11 +266,13 @@ class _MerchantHomeState extends State<MerchantHome> {
     _openedNotificationSub =
         FirebaseMessaging.onMessageOpenedApp.listen((message) async {
       await acknowledgeNotificationDisplay(message, 'BACKGROUND_OPEN');
+      _handleMerchantNotificationTap(message);
     });
 
     FirebaseMessaging.instance.getInitialMessage().then((message) async {
       if (message != null) {
         await acknowledgeNotificationDisplay(message, 'TERMINATED_OPEN');
+        _handleMerchantNotificationTap(message);
       }
     });
 
@@ -269,6 +280,14 @@ class _MerchantHomeState extends State<MerchantHome> {
         FirebaseMessaging.instance.onTokenRefresh.listen((refreshedToken) async {
       await registerFcmToken(refreshedToken);
     });
+  }
+
+  void _handleMerchantNotificationTap(RemoteMessage message) {
+    final type = message.data['type'] as String? ?? '';
+    const orderTypes = {'order_placed', 'order_cancelled', 'order_update'};
+    if (mounted && orderTypes.contains(type)) {
+      setState(() => tabIndex = 2); // Navigate to Orders tab
+    }
   }
 
   Future<void> registerFcmToken([String? overrideToken]) async {
@@ -1087,6 +1106,16 @@ class _MerchantHomeState extends State<MerchantHome> {
   }
 
   Widget orderCard(dynamic order) {
+    const statusLabels = {
+      'PENDING':          'في انتظار القبول ⏳',
+      'ACCEPTED':         'تم القبول ✅',
+      'PREPARING':        'جاري التجهيز 👨‍🍳',
+      'OUT_FOR_DELIVERY': 'خرج للتوصيل 🚚',
+      'DELIVERED':        'تم التسليم 🎉',
+      'CANCELLED':        'ملغى ❌',
+    };
+    final currentLabel = statusLabels[order['status']] ?? order['status'];
+
     return Card(
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1102,10 +1131,16 @@ class _MerchantHomeState extends State<MerchantHome> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: DropdownButtonFormField<String>(
               value: order['status'],
-              decoration: const InputDecoration(labelText: 'تحديث حالة الطلب'),
-              items: const ['PENDING', 'ACCEPTED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED']
-                  .map((status) => DropdownMenuItem(value: status, child: Text(status)))
-                  .toList(),
+              decoration: InputDecoration(
+                labelText: 'الحالة الحالية: $currentLabel',
+              ),
+              items: const [
+                'PENDING', 'ACCEPTED', 'PREPARING',
+                'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'
+              ].map((s) => DropdownMenuItem(
+                    value: s,
+                    child: Text(statusLabels[s] ?? s),
+                  )).toList(),
               onChanged: (status) {
                 if (status != null) updateOrder(order['id'], status);
               },

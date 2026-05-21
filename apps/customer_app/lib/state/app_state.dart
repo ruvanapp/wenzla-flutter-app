@@ -108,6 +108,20 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // ── Deep-link: pending order to open on Orders screen ────────────────────
+  String? _pendingOpenOrderId;
+  String? get pendingOpenOrderId => _pendingOpenOrderId;
+
+  /// Set by notification tap handler in main.dart; cleared by OrdersScreen.
+  void setPendingOpenOrderId(String? id) {
+    _pendingOpenOrderId = id;
+    notifyListeners();
+  }
+
+  void clearPendingOpenOrderId() {
+    _pendingOpenOrderId = null;
+  }
+
   // ── Stores ───────────────────────────────────────────────────────────────────
   List<dynamic> _stores        = [];
   List<dynamic> _categories    = [];

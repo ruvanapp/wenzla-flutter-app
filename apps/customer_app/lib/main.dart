@@ -16,9 +16,14 @@ final _localNotifications = FlutterLocalNotificationsPlugin();
 const _orderChannel = AndroidNotificationChannel(
   'wenzla_orders',
   'تحديثات الطلبات',
-  description: 'إشعارات حالة الطلبات',
+  description: 'إشعارات حالة الطلبات — تم القبول، جاري التحضير، خرج للتوصيل، تم التسليم',
   importance: Importance.high,
+  enableVibration: true,
+  playSound: true,
 );
+
+/// Shared group key so multiple order notifications stack cleanly.
+const _kOrderGroupKey = 'com.wenzla.customer.order_updates';
 
 @pragma('vm:entry-point')
 Future<void> _bgHandler(RemoteMessage message) async {
@@ -42,23 +47,36 @@ void main() async {
   );
   FirebaseMessaging.onBackgroundMessage(_bgHandler);
 
-  await _localNotifications.initialize(const InitializationSettings(
-    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-  ));
+  await _localNotifications.initialize(
+    const InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    ),
+  );
   await _localNotifications
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(_orderChannel);
 
+  // Show foreground notifications with sound + vibration + grouping
   FirebaseMessaging.onMessage.listen((RemoteMessage msg) {
     final n = msg.notification;
     if (n == null) return;
     _localNotifications.show(
-      n.hashCode, n.title, n.body,
-      NotificationDetails(android: AndroidNotificationDetails(
-        _orderChannel.id, _orderChannel.name,
-        channelDescription: _orderChannel.description,
-        icon: '@mipmap/ic_launcher',
-      )),
+      n.hashCode,
+      n.title,
+      n.body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _orderChannel.id,
+          _orderChannel.name,
+          channelDescription: _orderChannel.description,
+          icon: '@mipmap/ic_launcher',
+          importance: Importance.high,
+          priority: Priority.high,
+          enableVibration: true,
+          playSound: true,
+          groupKey: _kOrderGroupKey,
+        ),
+      ),
     );
   });
 
@@ -115,22 +133,29 @@ class _AppRootState extends State<_AppRoot> {
   }
 
   void _setupNotificationTapHandlers() {
-    // App killed → tapped notification that launched it
+    // App was killed → launched by tapping a notification
     FirebaseMessaging.instance.getInitialMessage().then((msg) {
       if (msg != null && mounted) _handleTap(msg);
     });
-    // App backgrounded → tapped notification to resume
+    // App was backgrounded → brought to front by tapping a notification
     FirebaseMessaging.onMessageOpenedApp.listen((msg) {
       if (mounted) _handleTap(msg);
     });
   }
 
   void _handleTap(RemoteMessage msg) {
-    final type = msg.data['type'] ?? '';
-    if (type == 'order_update' || type == 'order_placed' ||
-        type == 'order_confirmed' || type == 'order_shipped' ||
-        type == 'order_delivered') {
-      context.read<AppState>().showScreen(AppScreen.orders, bottomIndex: 1);
+    final type    = msg.data['type']    as String? ?? '';
+    final orderId = msg.data['orderId'] as String?;
+
+    const orderTypes = {
+      'order_update', 'order_placed', 'order_confirmed',
+      'order_shipped', 'order_delivered', 'order_cancelled',
+    };
+
+    if (orderTypes.contains(type)) {
+      final state = context.read<AppState>();
+      if (orderId != null) state.setPendingOpenOrderId(orderId);
+      state.showScreen(AppScreen.orders, bottomIndex: 1);
     }
   }
 

@@ -10,13 +10,39 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
+  final ScrollController _scrollCtrl = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppState>().loadOrders();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final st = context.read<AppState>();
+      await st.loadOrders();
+      // If opened via notification tap, try to scroll to the pending order
+      final pendingId = st.pendingOpenOrderId;
+      if (pendingId != null && mounted) {
+        st.clearPendingOpenOrderId();
+        _scrollToPendingOrder(st, pendingId);
+      }
     });
+  }
+
+  void _scrollToPendingOrder(AppState st, String orderId) {
+    final idx = st.orders.indexWhere((o) => o['id'] == orderId);
+    if (idx < 0 || !_scrollCtrl.hasClients) return;
+    const itemHeight = 180.0;
+    final offset = (idx * itemHeight).clamp(0.0, _scrollCtrl.position.maxScrollExtent);
+    _scrollCtrl.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -55,6 +81,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ? const EmptyState(icon: '📦', title: 'لا توجد طلبات بعد',
                           subtitle: 'سيظهر تاريخ طلباتك هنا')
                       : ListView.builder(
+                          controller: _scrollCtrl,
                           padding:   const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           itemCount: st.orders.length,
                           itemBuilder: (_, i) => FadeInWidget(
