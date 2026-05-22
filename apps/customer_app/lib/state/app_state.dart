@@ -377,6 +377,29 @@ class AppState extends ChangeNotifier {
   /// Returns [true] if the item was added/incremented.
   /// Returns [false] if the cart already contains items from a DIFFERENT store
   /// (single-store cart enforcement).
+  Map<String, dynamic> _normalizeCartItem(Map<String, dynamic> item) {
+    final normalized = Map<String, dynamic>.from(item);
+    final rawPrice = normalized['price'];
+    if (rawPrice != null) {
+      if (rawPrice is num) {
+        normalized['price'] = rawPrice.toDouble();
+      } else {
+        normalized['price'] = double.tryParse(rawPrice.toString()) ?? 0.0;
+      }
+    }
+    final rawQty = normalized['qty'];
+    if (rawQty != null) {
+      if (rawQty is int) {
+        normalized['qty'] = rawQty;
+      } else if (rawQty is num) {
+        normalized['qty'] = rawQty.toInt();
+      } else {
+        normalized['qty'] = int.tryParse(rawQty.toString().split('.').first) ?? 1;
+      }
+    }
+    return normalized;
+  }
+
   bool addToCart(Map<String, dynamic> product, {int qty = 1}) {
     // ── Single-store enforcement ──────────────────────────────────────────
     if (_cart.isNotEmpty) {
@@ -390,10 +413,12 @@ class AppState extends ChangeNotifier {
     final idx = _cart.indexWhere((i) => (i as Map)['id'] == product['id']);
     if (idx >= 0) {
       // Use Map<String,dynamic>.from() so the spread never produces Map<dynamic,dynamic>
-      final cur = Map<String, dynamic>.from(_cart[idx] as Map);
-      _cart[idx] = <String, dynamic>{...cur, 'qty': ((cur['qty'] as int?) ?? 1) + qty};
+      final cur = _normalizeCartItem(Map<String, dynamic>.from(_cart[idx] as Map));
+      _cart[idx] = _normalizeCartItem(
+        <String, dynamic>{...cur, 'qty': ((cur['qty'] as int?) ?? 1) + qty},
+      );
     } else {
-      _cart.add(<String, dynamic>{...product, 'qty': qty});
+      _cart.add(_normalizeCartItem(<String, dynamic>{...product, 'qty': qty}));
     }
     _saveCart();
     notifyListeners();
@@ -416,8 +441,8 @@ class AppState extends ChangeNotifier {
     if (qty <= 0) { removeFromCart(productId); return; }
     final idx = _cart.indexWhere((i) => (i as Map)['id'] == productId);
     if (idx >= 0) {
-      final cur = Map<String, dynamic>.from(_cart[idx] as Map);
-      _cart[idx] = <String, dynamic>{...cur, 'qty': qty};
+      final cur = _normalizeCartItem(Map<String, dynamic>.from(_cart[idx] as Map));
+      _cart[idx] = _normalizeCartItem(<String, dynamic>{...cur, 'qty': qty});
       _saveCart();
       notifyListeners();
     }

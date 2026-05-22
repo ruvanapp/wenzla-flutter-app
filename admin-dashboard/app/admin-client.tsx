@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { setAdminToken } from '../lib/api';
 import HomeCmsPanel from './components/HomeCmsPanel';
+import { HomeCmsPage } from './cms/pages/HomeCmsPage';
+import { ToastProvider, useToast } from './cms/components/Toast';
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'https://wenzla-backend-production.up.railway.app';
 
@@ -221,6 +223,13 @@ function exportCSV(orders: FullOrder[]) {
   a.download = `orders_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ── HomeCmsPage wrapper (needs ToastProvider context) ────────────────────────
+
+function HomeCmsPageWrapper({ token, apiBase }: { token: string; apiBase: string }) {
+  const addToast = useToast();
+  return <HomeCmsPage token={token} apiBase={apiBase} onToast={addToast} />;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -1194,11 +1203,13 @@ export default function AdminClient() {
           )}
 
           {/* ════════════════════════════════════════════════════════
-              HOME CMS PANEL
+              HOME CMS PANEL (modular)
              ════════════════════════════════════════════════════════ */}
           {activePanel === 'home_cms' && (
             <section className="panel" style={{ overflow: 'visible', borderRadius: 30 }}>
-              <HomeCmsPanel token={token!} apiUrl={apiUrl} />
+              <ToastProvider>
+                <HomeCmsPageWrapper token={token!} apiBase={apiUrl} />
+              </ToastProvider>
               {false && <>
 
               <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>

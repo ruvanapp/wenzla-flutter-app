@@ -27,8 +27,18 @@ class _CartScreenState extends State<CartScreen> {
       body: Consumer<AppState>(
         builder: (context, st, _) {
           if (st.cart.isEmpty) return const _CartEmptyBody();
+          final cartItems = st.cart
+              .map((item) => item is Map<String, dynamic>
+                  ? item
+                  : Map<String, dynamic>.from(item as Map))
+              .toList(growable: false);
           return _CartContent(
-            cart: st.cart.cast<Map<String, dynamic>>(),
+            key: ValueKey(
+              cartItems
+                  .map((item) => '${item['id']}:${item['qty']}')
+                  .join('|'),
+            ),
+            cart: cartItems,
             state: st,
             deliveryFee: _deliveryFee,
             couponDiscount: _couponDiscount,
@@ -150,6 +160,7 @@ class _CartContent extends StatelessWidget {
   final ValueChanged<double> onDiscountChanged;
 
   const _CartContent({
+    super.key,
     required this.cart,
     required this.state,
     required this.deliveryFee,
