@@ -14,6 +14,7 @@ class AccountTile extends StatefulWidget {
   final Widget? trailing;
   final bool isDestructive;
   final bool showChevron;
+  final bool isDisabled;
 
   const AccountTile({
     super.key,
@@ -26,6 +27,7 @@ class AccountTile extends StatefulWidget {
     this.trailing,
     this.isDestructive = false,
     this.showChevron = true,
+    this.isDisabled = false,
   });
 
   @override
@@ -61,19 +63,20 @@ class _AccountTileState extends State<AccountTile>
     final baseColor =
         widget.isDestructive ? kError : (widget.iconColor ?? kHoney);
     final bgColor = widget.iconBg ?? baseColor.withOpacity(0.10);
+    final enabled = !widget.isDisabled && widget.onTap != null;
 
     return ScaleTransition(
       scale: _scale,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => _ctrl.forward(),
+        onTapDown: enabled ? (_) => _ctrl.forward() : null,
         onTapUp: (_) {
           _ctrl.reverse();
-          widget.onTap?.call();
+          if (enabled) widget.onTap?.call();
         },
         onTapCancel: () => _ctrl.reverse(),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             textDirection: TextDirection.rtl,
             children: [
@@ -82,10 +85,14 @@ class _AccountTileState extends State<AccountTile>
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: bgColor,
-                  borderRadius: BorderRadius.circular(12),
+                  color: enabled ? bgColor : kBorder,
+                  borderRadius: BorderRadius.circular(13),
                 ),
-                child: Icon(widget.icon, color: baseColor, size: 20),
+                child: Icon(
+                  widget.icon,
+                  color: enabled ? baseColor : kTextMuted,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 14),
               // Title + subtitle
@@ -100,7 +107,11 @@ class _AccountTileState extends State<AccountTile>
                         fontFamily: 'Cairo',
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
-                        color: widget.isDestructive ? kError : kTextDark,
+                        color: widget.isDestructive
+                            ? kError
+                            : enabled
+                                ? kTextDark
+                                : kTextMuted,
                       ),
                     ),
                     if (widget.subtitle != null) ...[
@@ -112,6 +123,8 @@ class _AccountTileState extends State<AccountTile>
                           fontSize: 11,
                           color: kTextMuted,
                         ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ],
@@ -122,10 +135,12 @@ class _AccountTileState extends State<AccountTile>
                 widget.trailing!
               else if (widget.showChevron)
                 Icon(
-                  Icons.chevron_left_rounded,
+                  enabled ? Icons.chevron_left_rounded : Icons.lock_outline_rounded,
                   color: widget.isDestructive
                       ? kError.withOpacity(0.5)
-                      : kTextMuted,
+                      : enabled
+                          ? kTextMuted
+                          : kTextMuted.withOpacity(0.75),
                   size: 20,
                 ),
             ],

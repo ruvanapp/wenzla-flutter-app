@@ -176,6 +176,7 @@ const NAV_ITEMS = [
   ]},
   { group: 'المالية', items: [
     { key: 'financial',   icon: '💰', label: 'المالية والعمولات' },
+    { key: 'whatsapp_support', icon: '💬', label: 'دعم واتساب' },
   ]},
   { group: 'الإدارة', items: [
     { key: 'technical',   icon: '⚙️',  label: 'المراقبة التقنية' },
@@ -246,6 +247,8 @@ export default function AdminClient() {
   const [products, setProducts] = useState<Product[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [commissionPercentage, setCommissionPercentage] = useState('10');
+  const [supportWhatsappNumber, setSupportWhatsappNumber] = useState('');
+  const [supportWhatsappMessage, setSupportWhatsappMessage] = useState('');
   const [activePanel, setActivePanel] = useState('overview');
   const [message, setMessage] = useState('');
 
@@ -319,6 +322,10 @@ export default function AdminClient() {
     setMounted(true);
     setIdentifier('admin');
     setPassword('.Moha13579#');
+  }, []);
+
+  useEffect(() => {
+    loadSupportWhatsapp();
   }, []);
 
   useEffect(() => {
@@ -453,6 +460,24 @@ export default function AdminClient() {
   async function saveCommission() {
     await api('/admin/settings/commission', { method: 'PUT', body: JSON.stringify({ percentage: Number(commissionPercentage) }) });
     await refreshAll();
+  }
+
+  async function loadSupportWhatsapp() {
+    try {
+      const res = await api<{ number?: string; message?: string }>('/admin/settings/support-whatsapp');
+      setSupportWhatsappNumber(String(res?.number ?? ''));
+      setSupportWhatsappMessage(String(res?.message ?? ''));
+    } catch {}
+  }
+
+  async function saveSupportWhatsapp() {
+    await api('/admin/settings/support-whatsapp', {
+      method: 'PUT',
+      body: JSON.stringify({
+        number: supportWhatsappNumber,
+        message: supportWhatsappMessage,
+      }),
+    });
   }
 
   // ── Analytics ─────────────────────────────────────────────────────────────────
@@ -1532,6 +1557,41 @@ export default function AdminClient() {
                 </div>
 
                 <div className="chart-panel">
+                  <h3 className="chart-panel-title">💬 إعدادات واتساب الدعم</h3>
+                  <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+                    <div>
+                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
+                        WhatsApp Support Number
+                      </label>
+                      <input
+                        type="text"
+                        value={supportWhatsappNumber}
+                        onChange={e => setSupportWhatsappNumber(e.target.value)}
+                        placeholder="201145928534"
+                        style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 14, background: 'var(--paper)', color: 'var(--brown)' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
+                        WhatsApp Default Message
+                      </label>
+                      <textarea
+                        value={supportWhatsappMessage}
+                        onChange={e => setSupportWhatsappMessage(e.target.value)}
+                        rows={3}
+                        placeholder="السلام عليكم، محتاج مساعدة في تطبيق سوق العسل"
+                        style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 14, background: 'var(--paper)', color: 'var(--brown)', resize: 'vertical' }}
+                      />
+                    </div>
+                    <div>
+                      <button className="action-btn" onClick={saveSupportWhatsapp} style={{ background: 'var(--brown)', color: 'var(--cream)', border: 'none' }}>
+                        💾 حفظ إعدادات واتساب الدعم
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="chart-panel">
                   <h3 className="chart-panel-title">📊 ملخص الإيرادات</h3>
                   <RevenueChart />
                 </div>
@@ -1551,6 +1611,54 @@ export default function AdminClient() {
                     </div>
                   ))}
                   {commissions.length === 0 && <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>لا توجد عمولات بعد</div>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activePanel === 'whatsapp_support' && (
+            <div>
+              <div className="pg-header">
+                <div>
+                  <h2 className="pg-title">دعم واتساب</h2>
+                  <p className="pg-subtitle">إدارة رقم ورسالة دعم واتساب الظاهرين داخل التطبيق</p>
+                </div>
+              </div>
+
+              <div className="two-col">
+                <div className="chart-panel">
+                  <h3 className="chart-panel-title">💬 إعدادات واتساب الدعم</h3>
+                  <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+                    <div>
+                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
+                        support_whatsapp_number
+                      </label>
+                      <input
+                        type="text"
+                        value={supportWhatsappNumber}
+                        onChange={e => setSupportWhatsappNumber(e.target.value)}
+                        placeholder="201145928534"
+                        style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 14, background: 'var(--paper)', color: 'var(--brown)' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
+                        support_whatsapp_message
+                      </label>
+                      <textarea
+                        value={supportWhatsappMessage}
+                        onChange={e => setSupportWhatsappMessage(e.target.value)}
+                        rows={4}
+                        placeholder="السلام عليكم، محتاج مساعدة في تطبيق سوق العسل"
+                        style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 14, background: 'var(--paper)', color: 'var(--brown)', resize: 'vertical' }}
+                      />
+                    </div>
+                    <div>
+                      <button className="action-btn" onClick={saveSupportWhatsapp} style={{ background: 'var(--brown)', color: 'var(--cream)', border: 'none' }}>
+                        💾 حفظ إعدادات واتساب الدعم
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

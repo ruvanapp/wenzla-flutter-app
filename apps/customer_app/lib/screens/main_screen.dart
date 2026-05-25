@@ -114,32 +114,56 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildBottomNav(BuildContext context, AppState st) {
     return Container(
+      margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
       decoration: BoxDecoration(
         color: kSurface,
-        // Subtle warm top divider line
-        border: Border(
-          top: BorderSide(color: kBorder.withOpacity(0.35), width: 0.5),
-        ),
-        boxShadow: kNavShadow,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: kBorder.withOpacity(0.35)),
+        boxShadow: [
+          ...kNavShadow,
+          BoxShadow(
+            color: kHoney.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: SafeArea(
         top: false,
-        child: NavigationBar(
-          selectedIndex: st.bottomIndex.clamp(0, 3),
-          onDestinationSelected: (i) {
-            final st = context.read<AppState>();
-            st.showScreen(_indexToScreen(i), bottomIndex: i);
-            // Silently refresh orders whenever the orders tab becomes active
-            // (IndexedStack keeps OrdersScreen alive so initState never re-fires)
-            if (i == 1) st.silentRefreshOrders();
-          },
-          destinations: _buildDestinations(st),
-          height: 64,
-          backgroundColor:  kSurface,
-          surfaceTintColor: Colors.transparent,
-          indicatorColor:   kHoney.withOpacity(0.13),
-          labelBehavior:    NavigationDestinationLabelBehavior.alwaysShow,
-          animationDuration: const Duration(milliseconds: 250),
+        child: NavigationBarTheme(
+          data: NavigationBarThemeData(
+            height: 70,
+            backgroundColor: kSurface,
+            surfaceTintColor: Colors.transparent,
+            indicatorColor: kHoney.withOpacity(0.12),
+            labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((states) {
+              final selected = states.contains(WidgetState.selected);
+              return TextStyle(
+                fontFamily: 'Cairo',
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                fontSize: selected ? 12 : 11,
+                color: selected ? kDarkHoney : kTextMuted,
+              );
+            }),
+            iconTheme: WidgetStateProperty.resolveWith<IconThemeData>((states) {
+              final selected = states.contains(WidgetState.selected);
+              return IconThemeData(
+                size: selected ? 24 : 22,
+                color: selected ? kDarkHoney : kTextMuted,
+              );
+            }),
+          ),
+          child: NavigationBar(
+            selectedIndex: st.bottomIndex.clamp(0, 3),
+            onDestinationSelected: (i) {
+              final st = context.read<AppState>();
+              st.showScreen(_indexToScreen(i), bottomIndex: i);
+              if (i == 1) st.silentRefreshOrders();
+            },
+            destinations: _buildDestinations(st),
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            animationDuration: const Duration(milliseconds: 250),
+          ),
         ),
       ),
     );

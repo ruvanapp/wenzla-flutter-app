@@ -2,6 +2,30 @@ import 'package:flutter/material.dart';
 import '../../../theme/colors.dart';
 import '../../../widgets/widgets.dart';
 
+void _showCartRemovedSnackbar(BuildContext context) {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(
+    SnackBar(
+      content: const Text(
+        'تم حذف المنتج من السلة',
+        textDirection: TextDirection.rtl,
+        style: TextStyle(
+          fontFamily: 'Cairo',
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      backgroundColor: const Color(0xFFE53935),
+      duration: const Duration(seconds: 2),
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+    ),
+  );
+}
+
 class CartItemCard extends StatelessWidget {
   final Map<String, dynamic> item;
   final VoidCallback onRemove;
@@ -98,7 +122,10 @@ class CartItemCard extends StatelessWidget {
           ),
           // Remove button
           TapScaleWidget(
-            onTap: onRemove,
+            onTap: () {
+              onRemove();
+              _showCartRemovedSnackbar(context);
+            },
             child: Padding(
               padding: const EdgeInsets.only(top: 2, right: 2),
               child: Container(
@@ -149,7 +176,12 @@ class _QtyControl extends StatelessWidget {
           _QtyBtn(
             icon: qty <= 1 ? Icons.delete_outline_rounded : Icons.remove_rounded,
             iconColor: qty <= 1 ? const Color(0xFFE53935) : kTextBrown,
-            onTap: () => onChanged(qty - 1),
+            onTap: () {
+              onChanged(qty - 1);
+              if (qty <= 1 && context.mounted) {
+                _showCartRemovedSnackbar(context);
+              }
+            },
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),

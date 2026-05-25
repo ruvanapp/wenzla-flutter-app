@@ -11,6 +11,7 @@ class AccountHeader extends StatelessWidget {
   final bool isLoading;
   final VoidCallback? onSearchTap;
   final VoidCallback? onMenuTap;
+  final VoidCallback? onEditTap;
 
   const AccountHeader({
     super.key,
@@ -19,6 +20,7 @@ class AccountHeader extends StatelessWidget {
     this.isLoading = false,
     this.onSearchTap,
     this.onMenuTap,
+    this.onEditTap,
   });
 
   @override
@@ -26,8 +28,7 @@ class AccountHeader extends StatelessWidget {
     return ClipPath(
       clipper: _HoneyDripClipper(),
       child: Container(
-        // Extra bottom padding to keep the clip visible.
-        padding: const EdgeInsets.only(bottom: 36),
+        padding: const EdgeInsets.only(bottom: 24),
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [Color(0xFFD4A437), Color(0xFFA87820), Color(0xFF7A4C0A)],
@@ -38,7 +39,7 @@ class AccountHeader extends StatelessWidget {
         child: SafeArea(
           bottom: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -70,7 +71,7 @@ class AccountHeader extends StatelessWidget {
                     _iconButton(Icons.search_rounded, onSearchTap),
                   ],
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: 18),
                 // ── User info ────────────────────────────────────────────────
                 isLoading ? _skeleton() : _userInfo(),
                 const SizedBox(height: 8),
@@ -83,149 +84,183 @@ class AccountHeader extends StatelessWidget {
   }
 
   Widget _iconButton(IconData icon, VoidCallback? onTap) {
+    if (onTap == null) return const SizedBox(width: 40, height: 40);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.20),
+          color: Colors.white.withOpacity(0.18),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: Colors.white, size: 20),
+        child: Icon(
+          icon,
+          color: Colors.white,
+          size: 19,
+        ),
       ),
     );
   }
 
   Widget _userInfo() {
     final initials = name.isNotEmpty
-        ? name.trim().split(' ').map((w) => w.isNotEmpty ? w[0] : '').take(2).join()
+        ? name
+            .trim()
+            .split(' ')
+            .map((w) => w.isNotEmpty ? w[0] : '')
+            .where((char) => RegExp(r'[A-Za-z\u0600-\u06FF]').hasMatch(char))
+            .take(2)
+            .join()
         : '؟';
 
-    return Row(
-      textDirection: TextDirection.rtl,
-      children: [
-        // Avatar circle
-        Container(
-          width: 62,
-          height: 62,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.18),
-                blurRadius: 14,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              initials.isNotEmpty ? initials : '🍯',
-              style: const TextStyle(
-                fontFamily: 'Cairo',
-                fontWeight: FontWeight.w800,
-                fontSize: 22,
-                color: kDarkHoney,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
+      ),
+      child: Row(
+        textDirection: TextDirection.rtl,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.18),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                initials.isNotEmpty ? initials : '🍯',
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                  color: kDarkHoney,
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 14),
-        // Name + phone
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
-                style: const TextStyle(
-                  fontFamily: 'Cairo',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 17,
-                  color: Colors.white,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-              if (phone.isNotEmpty) ...[
-                const SizedBox(height: 2),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  phone,
-                  style: TextStyle(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
                     fontFamily: 'Cairo',
-                    fontSize: 13,
-                    color: Colors.white.withOpacity(0.85),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18,
+                    color: Colors.white,
                   ),
                 ),
+                if (phone.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    phone,
+                    textDirection: TextDirection.ltr,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white.withOpacity(0.82),
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
-        // Edit profile hint
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.18),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.edit_outlined, color: Colors.white, size: 13),
-              SizedBox(width: 4),
-              Text(
-                'تعديل',
-                style: TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 11,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
+          if (onEditTap != null)
+            GestureDetector(
+              onTap: onEditTap,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.edit_outlined, color: Colors.white, size: 14),
+                    SizedBox(width: 6),
+                    Text(
+                      'تعديل',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 11,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
-      ],
+            ),
+        ],
+      ),
     );
   }
 
   Widget _skeleton() {
-    return Row(
-      textDirection: TextDirection.rtl,
-      children: [
-        Container(
-          width: 62,
-          height: 62,
-          decoration: const BoxDecoration(
-            color: Colors.white24,
-            shape: BoxShape.circle,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        textDirection: TextDirection.rtl,
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: const BoxDecoration(
+              color: Colors.white24,
+              shape: BoxShape.circle,
+            ),
           ),
-        ),
-        const SizedBox(width: 14),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 130,
-              height: 14,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(7),
+          const SizedBox(width: 14),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 140,
+                height: 13,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(7),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Container(
-              width: 90,
-              height: 11,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(5),
+              const SizedBox(height: 8),
+              Container(
+                width: 96,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(5),
+                ),
               ),
-            ),
-          ],
-        ),
-      ],
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

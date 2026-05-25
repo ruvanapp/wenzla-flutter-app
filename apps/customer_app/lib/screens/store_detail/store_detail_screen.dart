@@ -5,6 +5,37 @@ import '../../state/app_state.dart';
 import '../../theme/colors.dart';
 import '../../widgets/widgets.dart';
 
+void _showCartAddedSnackbar(BuildContext context) {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(
+    SnackBar(
+      content: const Text(
+        'تمت إضافة المنتج إلى السلة',
+        textDirection: TextDirection.rtl,
+        style: TextStyle(
+          fontFamily: 'Cairo',
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      action: SnackBarAction(
+        label: 'عرض السلة',
+        textColor: Colors.white,
+        onPressed: () {
+          context.read<AppState>().showScreen(AppScreen.cart, bottomIndex: 2);
+        },
+      ),
+      backgroundColor: const Color(0xFF2E7D32),
+      duration: const Duration(seconds: 2),
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+    ),
+  );
+}
+
 class StoreDetailScreen extends StatefulWidget {
   const StoreDetailScreen({super.key});
   @override State<StoreDetailScreen> createState() => _StoreDetailScreenState();
@@ -57,6 +88,52 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
 
     return Scaffold(
       backgroundColor: kBackground,
+      floatingActionButton: st.cartCount > 0
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8, right: 4),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    FloatingActionButton(
+                      heroTag: 'store_cart_fab',
+                      backgroundColor: kHoney,
+                      foregroundColor: Colors.white,
+                      onPressed: () =>
+                          context.read<AppState>().showScreen(AppScreen.cart, bottomIndex: 2),
+                      child: const Icon(Icons.shopping_cart_checkout_rounded),
+                    ),
+                    Positioned(
+                      top: -4,
+                      left: -4,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                        child: Container(
+                          height: 22,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE53935),
+                            borderRadius: BorderRadius.circular(11),
+                            border: Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          child: Text(
+                            '${st.cartCount}',
+                            style: const TextStyle(
+                              fontFamily: 'Cairo',
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : null,
       body: st.loadingStore
           ? const _StoreLoadingState()
           : !hasStoreData
@@ -554,6 +631,99 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
     final name   = (p['name']     as String?) ?? '';
     final price  = double.tryParse(p['price']?.toString() ?? '0') ?? 0;
     final imgUrl = (p['imageUrl'] as String?);
+    final st = context.watch<AppState>();
+    final cartIndex = st.cart.indexWhere((item) => (item as Map)['id'] == p['id']);
+    final cartQty = cartIndex >= 0
+        ? (((st.cart[cartIndex] as Map)['qty'] as num?)?.toInt() ?? 1)
+        : 0;
+
+    Map<String, dynamic> buildCartItem() {
+      final storeId  = st.selectedStore?['id'] as String?;
+      final sName    = (st.selectedStore?['storeName'] as String?) ?? '';
+      final sLogoUrl = (st.selectedStore?['logoUrl']   as String?);
+      return <String, dynamic>{
+        ...Map<String, dynamic>.from(p),
+        if (storeId   != null) 'merchantId':   storeId,
+        if (sName.isNotEmpty)  'storeName':    sName,
+        if (sLogoUrl  != null) 'storeLogoUrl': sLogoUrl,
+      };
+    }
+
+    Future<void> handleAdd() async {
+      final item = buildCartItem();
+      final added = st.addToCart(item);
+      if (added) {
+        _showCartAddedSnackbar(context);
+      } else {
+        final confirm = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (ctx) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              title: const Text(
+                'السلة تحتوي على منتجات من متجر آخر',
+                style: TextStyle(
+                  fontFamily:  'Cairo',
+                  fontWeight:  FontWeight.w700,
+                  fontSize:    15,
+                  color:       Color(0xFF5D3A1A),
+                ),
+              ),
+              content: const Text(
+                'لا يمكن الطلب من أكثر من متجر في نفس الطلب. هل تريد إفراغ السلة وإضافة منتجات المتجر الجديد؟',
+                style: TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize:   13,
+                  color:      Color(0xFF6D4C41),
+                  height:     1.5,
+                ),
+              ),
+              actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('إلغاء',
+                    style: TextStyle(
+                      fontFamily: 'Cairo',
+                      color:      Color(0xFF9E9E9E),
+                      fontWeight: FontWeight.w600,
+                    )),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kHoney,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                  ),
+                  child: const Text('إفراغ السلة والمتابعة',
+                    style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize:   13,
+                    )),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (confirm == true) {
+          st.clearCart();
+          st.addToCart(item);
+          if (context.mounted) {
+            _showCartAddedSnackbar(context);
+          }
+        }
+      }
+    }
 
     return GestureDetector(
       onTap: () =>
@@ -603,128 +773,73 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
                               color:       kHoney,
                             )),
                       ),
-                      GestureDetector(
-                        onTap: () async {
-                          final st      = context.read<AppState>();
-                          final storeId  = st.selectedStore?['id'] as String?;
-                          final sName    = (st.selectedStore?['storeName'] as String?) ?? '';
-                          final sLogoUrl = (st.selectedStore?['logoUrl']   as String?);
-                          // Inject merchantId + storeName + storeLogoUrl so cart header works
-                          final item = <String, dynamic>{
-                            ...Map<String, dynamic>.from(p),
-                            if (storeId   != null) 'merchantId':    storeId,
-                            if (sName.isNotEmpty)  'storeName':     sName,
-                            if (sLogoUrl  != null) 'storeLogoUrl':  sLogoUrl,
-                          };
-                          final added = st.addToCart(item);
-                          if (added) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text(
-                                '${name.isNotEmpty ? name : "المنتج"} تمت الإضافة ✓',
-                                textDirection: TextDirection.rtl,
-                                style: const TextStyle(
-                                  fontFamily:  'Cairo',
-                                  fontWeight:  FontWeight.w600,
+                      if (cartQty <= 0)
+                        _StoreQtyTap(
+                          onTap: handleAdd,
+                          child: Container(
+                            width:  32, height: 32,
+                            decoration: const BoxDecoration(
+                                color: kHoney, shape: BoxShape.circle),
+                            child: const Icon(Icons.add_rounded,
+                                color: Colors.white, size: 18),
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: kSurfaceWarm,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: kBorder, width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _StoreQtyTap(
+                                onTap: () async {
+                                  st.updateCartQty(p['id'].toString(), cartQty - 1);
+                                },
+                                child: Container(
+                                  width: 24,
+                                  height: 24,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(Icons.remove_rounded,
+                                      color: kTextBrown, size: 16),
                                 ),
                               ),
-                              backgroundColor: const Color(0xFF2E7D32),
-                              duration:  const Duration(seconds: 2),
-                              behavior:  SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                            ));
-                          } else {
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              barrierDismissible: true,
-                              builder: (ctx) => Directionality(
-                                textDirection: TextDirection.rtl,
-                                child: AlertDialog(
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16)),
-                                  titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                                  contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                                  title: const Text(
-                                    'السلة تحتوي على منتجات من متجر آخر',
-                                    style: TextStyle(
-                                      fontFamily:  'Cairo',
-                                      fontWeight:  FontWeight.w700,
-                                      fontSize:    15,
-                                      color:       Color(0xFF5D3A1A),
-                                    ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                child: Text(
+                                  '$cartQty',
+                                  style: const TextStyle(
+                                    fontFamily: 'Cairo',
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                    color: kTextDark,
                                   ),
-                                  content: const Text(
-                                    'لا يمكن الطلب من أكثر من متجر في نفس الطلب. هل تريد إفراغ السلة وإضافة منتجات المتجر الجديد؟',
-                                    style: TextStyle(
-                                      fontFamily: 'Cairo',
-                                      fontSize:   13,
-                                      color:      Color(0xFF6D4C41),
-                                      height:     1.5,
-                                    ),
-                                  ),
-                                  actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.of(ctx).pop(false),
-                                      child: const Text('إلغاء',
-                                        style: TextStyle(
-                                          fontFamily: 'Cairo',
-                                          color:      Color(0xFF9E9E9E),
-                                          fontWeight: FontWeight.w600,
-                                        )),
-                                    ),
-                                    ElevatedButton(
-                                      onPressed: () => Navigator.of(ctx).pop(true),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: kHoney,
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(10)),
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 16, vertical: 8),
-                                      ),
-                                      child: const Text('إفراغ السلة والمتابعة',
-                                        style: TextStyle(
-                                          fontFamily: 'Cairo',
-                                          fontWeight: FontWeight.w700,
-                                          fontSize:   13,
-                                        )),
-                                    ),
-                                  ],
                                 ),
                               ),
-                            );
-                            if (confirm == true) {
-                              st.clearCart();
-                              st.addToCart(item);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                  content: Text(
-                                    '${name.isNotEmpty ? name : "المنتج"} تمت الإضافة ✓',
-                                    textDirection: TextDirection.rtl,
-                                    style: const TextStyle(
-                                      fontFamily:  'Cairo',
-                                      fontWeight:  FontWeight.w600,
-                                    ),
+                              _StoreQtyTap(
+                                onTap: handleAdd,
+                                child: Container(
+                                  width: 24,
+                                  height: 24,
+                                  alignment: Alignment.center,
+                                  decoration: const BoxDecoration(
+                                    color: kHoney,
+                                    shape: BoxShape.circle,
                                   ),
-                                  backgroundColor: const Color(0xFF2E7D32),
-                                  duration:  const Duration(seconds: 2),
-                                  behavior:  SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10)),
-                                ));
-                              }
-                            }
-                          }
-                        },
-                        child: Container(
-                          width:  32, height: 32,
-                          decoration: const BoxDecoration(
-                              color: kHoney, shape: BoxShape.circle),
-                          child: const Icon(Icons.add_rounded,
-                              color: Colors.white, size: 18),
+                                  child: const Icon(Icons.add_rounded,
+                                      color: Colors.white, size: 16),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                     ]),
                   ],
                 ),
@@ -870,6 +985,45 @@ class _InfoItem {
   final String   label;
   final String   value;
   const _InfoItem(this.icon, this.label, this.value);
+}
+
+class _StoreQtyTap extends StatefulWidget {
+  final Widget child;
+  final Future<void> Function() onTap;
+
+  const _StoreQtyTap({
+    required this.child,
+    required this.onTap,
+  });
+
+  @override
+  State<_StoreQtyTap> createState() => _StoreQtyTapState();
+}
+
+class _StoreQtyTapState extends State<_StoreQtyTap> {
+  bool _busy = false;
+
+  Future<void> _handleTap() async {
+    if (_busy || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.onTap();
+    } finally {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TapScaleWidget(
+      onTap: _busy ? null : _handleTap,
+      child: Opacity(
+        opacity: _busy ? 0.7 : 1,
+        child: widget.child,
+      ),
+    );
+  }
 }
 
 class _StoreLoadingState extends StatelessWidget {

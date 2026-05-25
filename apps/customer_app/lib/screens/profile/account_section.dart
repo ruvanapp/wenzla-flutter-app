@@ -52,11 +52,19 @@ class AccountSection extends StatelessWidget {
           Container(
             decoration: BoxDecoration(
               color: kSurface,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: kCardShadow,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                ...kCardShadow,
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+              border: Border.all(color: kBorder),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(20),
               child: Column(
                 children: [
                   for (int i = 0; i < tiles.length; i++) ...[

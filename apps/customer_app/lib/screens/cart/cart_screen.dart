@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../services/api_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
 import '../../widgets/widgets.dart';
@@ -16,8 +18,42 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   double _couponDiscount = 0;
+  String _supportWhatsappNumber = '';
+  String _supportWhatsappMessage =
+      'السلام عليكم، محتاج مساعدة في تطبيق سوق العسل';
 
   static const _deliveryFee = 0.0; // free delivery for now
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSupportWhatsapp();
+  }
+
+  Future<void> _loadSupportWhatsapp() async {
+    try {
+      final api = ApiService(token: context.read<AppState>().token);
+      final res = await api.get('/customer/settings/support-whatsapp');
+      if (!mounted || res is! Map) return;
+      setState(() {
+        _supportWhatsappNumber = (res['number'] as String? ?? '').trim();
+        _supportWhatsappMessage = (res['message'] as String? ??
+                'السلام عليكم، محتاج مساعدة في تطبيق سوق العسل')
+            .trim();
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _openSupportWhatsapp() async {
+    final number = _supportWhatsappNumber.trim();
+    if (number.isEmpty) return;
+    final normalized = number.startsWith('+') ? number.substring(1) : number;
+    final message = Uri.encodeComponent(_supportWhatsappMessage.trim());
+    final uri = Uri.parse('https://wa.me/$normalized?text=$message');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +79,8 @@ class _CartScreenState extends State<CartScreen> {
             deliveryFee: _deliveryFee,
             couponDiscount: _couponDiscount,
             onDiscountChanged: (d) => setState(() => _couponDiscount = d),
+            supportWhatsappNumber: _supportWhatsappNumber,
+            onSupportTap: _openSupportWhatsapp,
           );
         },
       ),
@@ -158,6 +196,8 @@ class _CartContent extends StatelessWidget {
   final double deliveryFee;
   final double couponDiscount;
   final ValueChanged<double> onDiscountChanged;
+  final String supportWhatsappNumber;
+  final Future<void> Function() onSupportTap;
 
   const _CartContent({
     super.key,
@@ -166,6 +206,8 @@ class _CartContent extends StatelessWidget {
     required this.deliveryFee,
     required this.couponDiscount,
     required this.onDiscountChanged,
+    required this.supportWhatsappNumber,
+    required this.onSupportTap,
   });
 
   String get _storeName =>
@@ -250,6 +292,69 @@ class _CartContent extends StatelessWidget {
               CartCouponSection(
                 onDiscountApplied: onDiscountChanged,
               ),
+              if (supportWhatsappNumber.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                  child: HoneyCard(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      textDirection: TextDirection.rtl,
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF25D366).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.support_agent_rounded,
+                            color: Color(0xFF25D366),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'الدعم عبر واتساب',
+                                style: TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: kTextDark,
+                                ),
+                                textDirection: TextDirection.rtl,
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'تواصل معنا لحل أي مشكلة بسرعة',
+                                style: TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontSize: 12,
+                                  color: kTextMuted,
+                                ),
+                                textDirection: TextDirection.rtl,
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: onSupportTap,
+                          child: const Text(
+                            'تواصل الآن',
+                            style: TextStyle(
+                              fontFamily: 'Cairo',
+                              fontWeight: FontWeight.w700,
+                              color: kHoney,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               // Phase 5: Totals
               CartTotalsCard(
                 subtotal:    state.cartTotal,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../services/api_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
 import '../../widgets/widgets.dart';
@@ -11,6 +13,9 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   final ScrollController _scrollCtrl = ScrollController();
+  String _supportWhatsappNumber = '';
+  String _supportWhatsappMessage =
+      'السلام عليكم، محتاج مساعدة في تطبيق سوق العسل';
 
   @override
   void initState() {
@@ -18,6 +23,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final st = context.read<AppState>();
       await st.loadOrders();
+      await _loadSupportWhatsapp();
       // If opened via notification tap, try to scroll to the pending order
       final pendingId = st.pendingOpenOrderId;
       if (pendingId != null && mounted) {
@@ -43,6 +49,31 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void dispose() {
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSupportWhatsapp() async {
+    try {
+      final api = ApiService(token: context.read<AppState>().token);
+      final res = await api.get('/customer/settings/support-whatsapp');
+      if (!mounted || res is! Map) return;
+      setState(() {
+        _supportWhatsappNumber = (res['number'] as String? ?? '').trim();
+        _supportWhatsappMessage = (res['message'] as String? ??
+                'السلام عليكم، محتاج مساعدة في تطبيق سوق العسل')
+            .trim();
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _openSupportWhatsapp() async {
+    final number = _supportWhatsappNumber.trim();
+    if (number.isEmpty) return;
+    final normalized = number.startsWith('+') ? number.substring(1) : number;
+    final message = Uri.encodeComponent(_supportWhatsappMessage.trim());
+    final uri = Uri.parse('https://wa.me/$normalized?text=$message');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
@@ -83,10 +114,49 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       : ListView.builder(
                           controller: _scrollCtrl,
                           padding:   const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          itemCount: st.orders.length,
+                          itemCount: st.orders.length + (_supportWhatsappNumber.isEmpty ? 0 : 1),
                           itemBuilder: (_, i) => FadeInWidget(
                             delay: Duration(milliseconds: (i * 60).clamp(0, 300)),
-                            child: _buildOrderCard(context, st, st.orders[i]),
+                            child: i < st.orders.length
+                                ? _buildOrderCard(context, st, st.orders[i])
+                                : Container(
+                                    margin: const EdgeInsets.only(top: 6, bottom: 12),
+                                    decoration: BoxDecoration(
+                                      color: kSurface,
+                                      borderRadius: BorderRadius.circular(16),
+                                      boxShadow: kCardShadow,
+                                    ),
+                                    child: ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                      leading: Container(
+                                        width: 42,
+                                        height: 42,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF25D366).withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: const Icon(Icons.support_agent_rounded, color: Color(0xFF25D366)),
+                                      ),
+                                      title: const Text(
+                                        'الدعم عبر واتساب',
+                                        style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700, color: kTextDark),
+                                        textDirection: TextDirection.rtl,
+                                      ),
+                                      subtitle: const Text(
+                                        'تواصل معنا لحل أي مشكلة بسرعة',
+                                        style: TextStyle(fontFamily: 'Cairo', fontSize: 12, color: kTextMuted),
+                                        textDirection: TextDirection.rtl,
+                                      ),
+                                      trailing: TextButton(
+                                        onPressed: _openSupportWhatsapp,
+                                        child: const Text(
+                                          'تواصل الآن',
+                                          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700, color: kHoney),
+                                        ),
+                                      ),
+                                      onTap: _openSupportWhatsapp,
+                                    ),
+                                  ),
                           ),
                         ),
                 ),

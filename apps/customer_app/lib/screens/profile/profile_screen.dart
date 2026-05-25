@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../services/api_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
 import '../../widgets/widgets.dart';
@@ -24,6 +25,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   // ── Animation controller for staggered entry ─────────────────────────────
   late final AnimationController _entryCtrl;
+  String _supportWhatsappNumber = '';
+  String _supportWhatsappMessage =
+      'السلام عليكم، محتاج مساعدة في تطبيق سوق العسل';
 
   @override
   void initState() {
@@ -32,6 +36,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     )..forward();
+    _loadSupportWhatsapp();
   }
 
   @override
@@ -43,7 +48,10 @@ class _ProfileScreenState extends State<ProfileScreen>
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   Future<void> _refresh() async {
-    await context.read<AppState>().loadOrders();
+    await Future.wait([
+      context.read<AppState>().loadOrders(),
+      _loadSupportWhatsapp(),
+    ]);
   }
 
   Future<void> _launch(String url) async {
@@ -51,6 +59,28 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  Future<void> _loadSupportWhatsapp() async {
+    try {
+      final api = ApiService(token: context.read<AppState>().token);
+      final res = await api.get('/customer/settings/support-whatsapp');
+      if (!mounted || res is! Map) return;
+      setState(() {
+        _supportWhatsappNumber = (res['number'] as String? ?? '').trim();
+        _supportWhatsappMessage = (res['message'] as String? ??
+                'السلام عليكم، محتاج مساعدة في تطبيق سوق العسل')
+            .trim();
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _openSupportWhatsapp() async {
+    final number = _supportWhatsappNumber.trim();
+    if (number.isEmpty) return;
+    final normalized = number.startsWith('+') ? number.substring(1) : number;
+    final message = Uri.encodeComponent(_supportWhatsappMessage.trim());
+    await _launch('https://wa.me/$normalized?text=$message');
   }
 
   void _toast(String msg) {
@@ -189,10 +219,11 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   Widget build(BuildContext context) {
     final st = context.watch<AppState>();
-    final name = (st.user?['name'] as String?) ??
-        (st.user?['phone'] as String?) ??
-        'عميل';
+    final rawName = (st.user?['name'] as String?)?.trim() ?? '';
     final phone = (st.user?['phone'] as String?) ?? '';
+    final name = rawName.isNotEmpty && rawName != phone
+        ? rawName
+        : 'أهلاً بك 👋';
 
     return Scaffold(
       backgroundColor: kBackground,
@@ -213,6 +244,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   onSearchTap: () => context
                       .read<AppState>()
                       .showScreen(AppScreen.home, bottomIndex: 0),
+                  onEditTap: () => _toast('تعديل الملف الشخصي — قريباً!'),
                 ),
               ),
             ),
@@ -276,6 +308,42 @@ class _ProfileScreenState extends State<ProfileScreen>
 
             const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
+            SliverToBoxAdapter(
+              child: FadeInWidget(
+                delay: const Duration(milliseconds: 165),
+                child: AccountSection(
+                  title: 'الدعم والمساعدة',
+                  tiles: [
+                    AccountTile(
+                      icon: Icons.support_agent_rounded,
+                      title: 'الدعم والمساعدة',
+                      subtitle: _supportWhatsappNumber.isEmpty
+                          ? 'سيتوفر التواصل عبر واتساب بعد تفعيل بيانات الدعم'
+                          : 'تواصل معنا عبر واتساب',
+                      iconColor: kSuccess,
+                      trailing: _supportWhatsappNumber.isEmpty
+                          ? _badge('غير متاح', kTextMuted)
+                          : const Text(
+                              'تواصل الآن',
+                              style: TextStyle(
+                                fontFamily: 'Cairo',
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                                color: kHoney,
+                              ),
+                            ),
+                      isDisabled: _supportWhatsappNumber.isEmpty,
+                      onTap: _supportWhatsappNumber.isEmpty
+                          ? null
+                          : _openSupportWhatsapp,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 20)),
+
             // ── Referral banner ────────────────────────────────────────────
             SliverToBoxAdapter(
               child: FadeInWidget(
@@ -286,47 +354,31 @@ class _ProfileScreenState extends State<ProfileScreen>
 
             const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
-            // ── Important links ────────────────────────────────────────────
+            // ── Policies ───────────────────────────────────────────────────
             SliverToBoxAdapter(
               child: FadeInWidget(
                 delay: const Duration(milliseconds: 200),
                 child: AccountSection(
-                  title: 'روابط مهمة',
+                  title: 'السياسات',
                   tiles: [
+                    AccountTile(
+                      icon: Icons.assignment_return_rounded,
+                      title: 'سياسة الاسترجاع',
+                      subtitle: 'تعرف على شروط الإرجاع والاسترداد',
+                      iconColor: kTextBrown,
+                      onTap: () => _toast('سياسة الاسترجاع — قريباً!'),
+                    ),
                     AccountTile(
                       icon: Icons.description_rounded,
                       title: 'الشروط والأحكام',
+                      subtitle: 'الأحكام المنظمة لاستخدام التطبيق',
                       iconColor: kTextBrown,
                       onTap: () => _toast('الشروط والأحكام — قريباً!'),
                     ),
                     AccountTile(
-                      icon: Icons.local_shipping_rounded,
-                      title: 'سياسة الشحن والتوصيل',
-                      iconColor: kTextBrown,
-                      onTap: () => _toast('سياسة الشحن — قريباً!'),
-                    ),
-                    AccountTile(
-                      icon: Icons.assignment_return_rounded,
-                      title: 'سياسة الإرجاع والاسترداد',
-                      iconColor: kTextBrown,
-                      onTap: () => _toast('سياسة الإرجاع — قريباً!'),
-                    ),
-                    AccountTile(
-                      icon: Icons.help_rounded,
-                      title: 'الأسئلة الشائعة',
-                      iconColor: kInfo,
-                      onTap: () => _toast('الأسئلة الشائعة — قريباً!'),
-                    ),
-                    AccountTile(
-                      icon: Icons.support_agent_rounded,
-                      title: 'تواصل معنا',
-                      subtitle: 'خدمة العملاء على واتساب',
-                      iconColor: kSuccess,
-                      onTap: () => _launch('https://wa.me/+201150100555'),
-                    ),
-                    AccountTile(
                       icon: Icons.info_rounded,
                       title: 'عن التطبيق',
+                      subtitle: 'معلومات الإصدار والمنصة',
                       iconColor: kHoney,
                       onTap: _showAbout,
                     ),
@@ -349,7 +401,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                       title: 'واتساب',
                       subtitle: 'تواصل معنا مباشرة',
                       iconColor: const Color(0xFF25D366),
-                      onTap: () => _launch('https://wa.me/+201150100555'),
+                      onTap: _supportWhatsappNumber.isEmpty
+                          ? null
+                          : _openSupportWhatsapp,
                     ),
                     AccountTile(
                       icon: Icons.facebook,
@@ -463,32 +517,34 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildWalletRow() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-      child: Row(
-        textDirection: TextDirection.rtl,
-        children: [
-          Expanded(
-            child: _statCard(
-              icon: Icons.account_balance_wallet_rounded,
-              label: 'محفظتي',
-              value: '0.00',
-              unit: 'جنيه',
-              color: kHoney,
-              onTap: () => _toast('المحفظة — قريباً!'),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      child: IntrinsicHeight(
+        child: Row(
+          textDirection: TextDirection.rtl,
+          children: [
+            Expanded(
+              child: _statCard(
+                icon: Icons.account_balance_wallet_rounded,
+                label: 'محفظتي',
+                value: '0.00',
+                unit: 'جنيه',
+                color: kHoney,
+                onTap: () => _toast('المحفظة — قريباً!'),
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _statCard(
-              icon: Icons.stars_rounded,
-              label: 'نقاط الولاء',
-              value: '0',
-              unit: 'نقطة',
-              color: const Color(0xFF7B1FA2),
-              onTap: () => _toast('نقاط الولاء — قريباً!'),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _statCard(
+                icon: Icons.stars_rounded,
+                label: 'نقاط الولاء',
+                value: '0',
+                unit: 'نقطة',
+                color: const Color(0xFF7B1FA2),
+                onTap: () => _toast('نقاط الولاء — قريباً!'),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -501,63 +557,77 @@ class _ProfileScreenState extends State<ProfileScreen>
     required Color color,
     VoidCallback? onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: kSurface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: kCardShadow,
-          border: Border.all(color: color.withOpacity(0.15)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(10),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+          decoration: BoxDecoration(
+            color: kSurface,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              ...kCardShadow,
+              BoxShadow(
+                color: color.withOpacity(0.05),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
               ),
-              child: Icon(icon, color: color, size: 20),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              textDirection: TextDirection.rtl,
-              children: [
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontWeight: FontWeight.w800,
-                    fontSize: 22,
-                    color: color,
-                  ),
+            ],
+            border: Border.all(color: color.withOpacity(0.15)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  unit,
-                  style: const TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 11,
-                    color: kTextMuted,
-                  ),
-                ),
-              ],
-            ),
-            Text(
-              label,
-              style: const TextStyle(
-                fontFamily: 'Cairo',
-                fontSize: 12,
-                color: kTextMuted,
+                child: Icon(icon, color: color, size: 24),
               ),
-            ),
-          ],
+              const SizedBox(height: 18),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                textDirection: TextDirection.rtl,
+                children: [
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w800,
+                      fontSize: 24,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    unit,
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: kTextMuted,
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: kTextMuted,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -654,7 +724,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           child: InkWell(
             borderRadius: BorderRadius.circular(18),
             splashColor: Colors.white.withOpacity(0.08),
-            onTap: () => _launch('https://wa.me/+201150100555'),
+            onTap: _supportWhatsappNumber.isEmpty
+                ? null
+                : _openSupportWhatsapp,
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Row(
