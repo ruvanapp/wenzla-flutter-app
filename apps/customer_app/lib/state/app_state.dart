@@ -36,12 +36,20 @@ class AppState extends ChangeNotifier {
   String?               get token => _token;
   Map<String, dynamic>? get user  => _user;
   bool                  get isLoggedIn => _token != null;
+  double get walletBalance {
+    final raw = _user?['walletBalance'];
+    if (raw == null) return 0.0;
+    return double.tryParse(raw.toString()) ?? 0.0;
+  }
 
   Future<void> initAuth() async {
     final saved = await StorageService.loadAuth();
     _token = saved.token;
     _user  = saved.user;
     notifyListeners();
+    if (isLoggedIn) {
+      await refreshProfile(silent: true);
+    }
     // Flush any FCM token that arrived before auth was restored
     if (isLoggedIn) await _flushFcmToken();
   }
@@ -66,6 +74,7 @@ class AppState extends ChangeNotifier {
         _token = res['token'] as String;
         _user  = res['user']  as Map<String, dynamic>?;
         await StorageService.saveAuth(_token!, _user ?? {});
+        await refreshProfile(silent: true);
         notifyListeners();
         // Flush any FCM token that arrived before login completed
         unawaited(_flushFcmToken());
@@ -105,6 +114,28 @@ class AppState extends ChangeNotifier {
       await api.patch('/auth/customer/fcm-token', {'fcmToken': t}, auth: true);
     } catch (_) {
       // Non-critical — notifications may not work but app continues
+    }
+  }
+
+  Future<void> refreshProfile({bool silent = false}) async {
+    if (!isLoggedIn) return;
+    try {
+      final api = ApiService(token: _token);
+      final res = await api.get('/customer/profile', auth: true);
+      if (res is Map<String, dynamic>) {
+        _user = {
+          ...?_user,
+          ...res,
+        };
+        await StorageService.saveAuth(_token!, _user ?? {});
+        if (!silent) {
+          notifyListeners();
+        } else {
+          notifyListeners();
+        }
+      }
+    } catch (_) {
+      // Keep existing cached profile if refresh fails
     }
   }
 
@@ -339,9 +370,7 @@ class AppState extends ChangeNotifier {
       // Wrap in List<dynamic> so runtime type allows spread-created replacements
       // in addToCart/updateCartQty without type errors.
       _cart = List<dynamic>.from(
-        loaded.map((i) => i is Map<String, dynamic>
-            ? i
-            : Map<String, dynamic>.from(i as Map)),
+        loaded.map((i) => Map<String, dynamic>.from(i)),
       );
     } catch (_) {
       // Ultimate fallback: any unexpected exception → clear only the cart,
@@ -465,6 +494,8 @@ class AppState extends ChangeNotifier {
     String? notes,
     String? lat,
     String? lng,
+    bool useWallet = false,
+    double walletAmount = 0,
   }) async {
     if (!isLoggedIn || _cart.isEmpty) return false;
     _checkingOut = true;
@@ -485,6 +516,18 @@ class AppState extends ChangeNotifier {
     final deliveryAddress = governorate.isNotEmpty
         ? '$address، $governorate'
         : address;
+
+    // Determine payment method
+    String paymentMethod = 'CASH_ON_DELIVERY';
+    if (useWallet && walletAmount > 0) {
+      final cartTotalVal = cartTotal;
+      if (walletAmount >= cartTotalVal) {
+        paymentMethod = 'WALLET';
+      } else {
+        paymentMethod = 'PARTIAL_WALLET';
+      }
+    }
+
     try {
       final res = await api.post('/customer/orders', {
         'merchantId':      merchantId,
@@ -492,6 +535,8 @@ class AppState extends ChangeNotifier {
         'customerPhone':   ApiService.normalisePhone(phone),
         'deliveryAddress': deliveryAddress,
         'items':           items,
+        'paymentMethod':   paymentMethod,
+        if (useWallet && walletAmount > 0) 'walletAmount': walletAmount,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
       }, auth: true);
       _checkingOut = false;
@@ -499,6 +544,10 @@ class AppState extends ChangeNotifier {
         _cart = [];
         await _saveCart();
         await loadOrders();
+        // Refresh wallet balance after wallet payment
+        if (useWallet && walletAmount > 0) {
+          await refreshProfile(silent: true);
+        }
         notifyListeners();
         return true;
       }

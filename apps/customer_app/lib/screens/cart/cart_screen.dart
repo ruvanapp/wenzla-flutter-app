@@ -566,6 +566,7 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
   final _noteCtrl  = TextEditingController();
   String? _governorate;
   bool _submitting = false;
+  bool _useWallet  = false;
 
   static const _govs = [
     'القاهرة','الجيزة','الإسكندرية','الدقهلية','الشرقية',
@@ -670,6 +671,13 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                     _buildField(_noteCtrl, 'ملاحظات إضافية (اختياري)',
                         Icons.note_outlined,
                         maxLines: 2),
+                    const SizedBox(height: 20),
+                    // Wallet payment section
+                    _WalletPaySection(
+                      state: widget.state,
+                      useWallet: _useWallet,
+                      onToggle: (val) => setState(() => _useWallet = val),
+                    ),
                     const SizedBox(height: 28),
                     // Confirm button
                     _ConfirmButton(
@@ -734,12 +742,17 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
       return;
     }
     setState(() => _submitting = true);
+    final walletBal = widget.state.walletBalance;
+    final cartTot   = widget.state.cartTotal;
+    final walletAmt = _useWallet ? walletBal.clamp(0.0, cartTot) : 0.0;
     final ok = await widget.state.checkout(
       name:        name,
       phone:       phone,
       address:     addr,
       governorate: _governorate!,
       notes:       _noteCtrl.text.trim(),
+      useWallet:   _useWallet && walletAmt > 0,
+      walletAmount: walletAmt,
     );
     if (!mounted) return;
     setState(() => _submitting = false);
@@ -763,6 +776,135 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
       margin: const EdgeInsets.all(16),
       duration: const Duration(seconds: 3),
     ));
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wallet pay section inside checkout sheet
+// ─────────────────────────────────────────────────────────────────────────────
+class _WalletPaySection extends StatelessWidget {
+  final AppState state;
+  final bool useWallet;
+  final ValueChanged<bool> onToggle;
+
+  const _WalletPaySection({
+    required this.state,
+    required this.useWallet,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final balance = state.walletBalance;
+    final cartTot = state.cartTotal;
+    if (balance <= 0) return const SizedBox.shrink();
+
+    final walletCover   = balance.clamp(0.0, cartTot);
+    final remainingCash = (cartTot - walletCover).clamp(0.0, double.infinity);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: kSurfaceWarm,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: useWallet ? kHoney : kBorder,
+          width: useWallet ? 1.5 : 1,
+        ),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Toggle row
+          Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: kHoney.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.account_balance_wallet_rounded,
+                    color: kHoney, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'الدفع من المحفظة',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: kTextDark,
+                      ),
+                      textDirection: TextDirection.rtl,
+                    ),
+                    Text(
+                      'رصيدك: ${balance.toStringAsFixed(2)} ج.م',
+                      style: const TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 12,
+                        color: kTextMuted,
+                      ),
+                      textDirection: TextDirection.rtl,
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: useWallet,
+                onChanged: onToggle,
+                activeColor: kHoney,
+              ),
+            ],
+          ),
+          if (useWallet) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: kBorder),
+            const SizedBox(height: 10),
+            _payRow('خصم من المحفظة',
+                '- ${walletCover.toStringAsFixed(2)} ج.م',
+                const Color(0xFF2E7D32)),
+            if (remainingCash > 0) ...[
+              const SizedBox(height: 6),
+              _payRow('المتبقي كاش عند الاستلام',
+                  '${remainingCash.toStringAsFixed(2)} ج.م',
+                  kTextBrown),
+            ] else ...[
+              const SizedBox(height: 6),
+              _payRow('إجمالي مدفوع من المحفظة',
+                  '${walletCover.toStringAsFixed(2)} ج.م',
+                  kHoney),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _payRow(String label, String value, Color valueColor) {
+    return Row(
+      textDirection: TextDirection.rtl,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                fontFamily: 'Cairo', fontSize: 12, color: kTextMuted),
+            textDirection: TextDirection.rtl),
+        Text(value,
+            style: TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: valueColor),
+            textDirection: TextDirection.rtl),
+      ],
+    );
   }
 }
 
