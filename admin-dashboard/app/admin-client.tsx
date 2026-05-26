@@ -383,7 +383,7 @@ export default function AdminClient() {
   const [notifTarget, setNotifTarget] = useState<'customers' | 'merchants'>('customers');
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifMessage, setNotifMessage] = useState('');
-  const [notifHistory, setNotifHistory] = useState<{ id: string; title: string; body: string; sentAt: string; targetType: string }[]>([]);
+  const [notifHistory, setNotifHistory] = useState<{ id: string; title: string; message?: string; body?: string; createdAt?: string; sentAt?: string; audience?: string; targetType?: string }[]>([]);
 
   // ── Security state ────────────────────────────────────────────────────────────
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -760,8 +760,8 @@ export default function AdminClient() {
   // ── Notifications ─────────────────────────────────────────────────────────────
   async function loadNotifHistory() {
     try {
-      const data = await api<{ id: string; title: string; body: string; sentAt: string; targetType: string }[]>('/admin/notifications/history');
-      setNotifHistory(data ?? []);
+      const data = await api<typeof notifHistory>('/admin/notifications/history');
+      setNotifHistory(Array.isArray(data) ? data : []);
     } catch { /* silent */ }
   }
 
@@ -1741,12 +1741,12 @@ export default function AdminClient() {
                   ) : notifHistory.map(n => (
                     <div className="lp-row" key={n.id}>
                       <div className="lp-info">
-                        <strong>{n.title}</strong>
-                        <div className="lp-sub">{n.body}</div>
+                        <strong>{n.title ?? ''}</strong>
+                        <div className="lp-sub">{n.message ?? n.body ?? ''}</div>
                       </div>
                       <div style={{ textAlign: 'left', flexShrink: 0 }}>
-                        <span className="sec-badge active">{n.targetType === 'customers' ? 'عملاء' : 'تجار'}</span>
-                        <div style={{ fontFamily: 'Cairo', fontSize: 11, color: 'var(--muted)', marginTop: 3 }} dir="ltr">{formatDate(n.sentAt)}</div>
+                        <span className="sec-badge active">{(n.audience ?? n.targetType) === 'customers' ? 'عملاء' : 'تجار'}</span>
+                        <div style={{ fontFamily: 'Cairo', fontSize: 11, color: 'var(--muted)', marginTop: 3 }} dir="ltr">{formatDate(n.createdAt ?? n.sentAt ?? '')}</div>
                       </div>
                     </div>
                   ))}
@@ -1941,7 +1941,7 @@ export default function AdminClient() {
                 <div className="lp-head"><h3>قائمة الطلبات</h3></div>
                 <div className="lp-body">
                   {walletRechargeRequests.map((request) => {
-                    const screenshotUrl = request.screenshotUrl.startsWith('http')
+                    const screenshotUrl = request.screenshotUrl?.startsWith('http')
                       ? request.screenshotUrl
                       : `${apiUrl}${request.screenshotUrl}`;
                     const isPending = request.status === 'PENDING';
@@ -2677,7 +2677,7 @@ export default function AdminClient() {
               <div className="modal-section">
                 <div className="modal-section-title">🧾 صورة التحويل</div>
                 <img
-                  src={selectedRechargeRequest.screenshotUrl.startsWith('http') ? selectedRechargeRequest.screenshotUrl : `${apiUrl}${selectedRechargeRequest.screenshotUrl}`}
+                  src={selectedRechargeRequest.screenshotUrl?.startsWith('http') ? selectedRechargeRequest.screenshotUrl : selectedRechargeRequest.screenshotUrl ? `${apiUrl}${selectedRechargeRequest.screenshotUrl}` : ''}
                   alt="wallet recharge proof"
                   style={{ width: '100%', maxHeight: 420, objectFit: 'contain', borderRadius: 18, background: '#fff8ec' }}
                 />
