@@ -125,9 +125,38 @@ type HomeSection = {
 type RevenuePoint = { date: string; revenue: number; orders: number };
 type TopProduct = { name: string; storeName: string; totalSold: number; totalRevenue: number };
 type TopVendor = { storeName: string; totalOrders: number; totalRevenue: number };
-type AdminUser = { id: string; name?: string; phone: string; role: string; createdAt: string; isBanned?: boolean; _count?: { orders: number } };
+type AdminUser = { id: string; name?: string; phone: string; role: string; createdAt: string; isBanned?: boolean; walletBalance?: string | number; _count?: { orders: number } };
 type Employee = { id: string; name: string; phone: string; permissions: string[]; createdAt: string };
 type Activity = { id: string; action: string; details?: string; adminId?: string; createdAt: string };
+type WalletRechargeRequest = {
+  id: string;
+  amount: string;
+  paymentMethod: 'VODAFONE_CASH' | 'INSTAPAY' | 'BANK_TRANSFER';
+  screenshotUrl: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  adminNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user: { id: string; name?: string | null; phone?: string | null };
+};
+type WalletManualCreditReason =
+  | 'COMPENSATION'
+  | 'GIFT'
+  | 'CASHBACK'
+  | 'BALANCE_CORRECTION'
+  | 'OTHER';
+type WalletTransactionRow = {
+  id: string;
+  amount: number;
+  type: string;
+  reasonType?: string | null;
+  adminNote?: string | null;
+  balanceBefore: number;
+  balanceAfter: number;
+  createdAt: string;
+  metadata?: any;
+};
+type WalletRechargeStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -158,6 +187,31 @@ const PAYMENT_AR: Record<string, string> = {
   ONLINE: 'أونلاين',
 };
 
+const WALLET_RECHARGE_METHOD_AR: Record<string, string> = {
+  VODAFONE_CASH: 'Vodafone Cash',
+  INSTAPAY: 'InstaPay',
+  BANK_TRANSFER: 'Bank Transfer',
+};
+
+const WALLET_RECHARGE_STATUS_AR: Record<string, string> = {
+  PENDING: 'قيد المراجعة',
+  APPROVED: 'مقبول',
+  REJECTED: 'مرفوض',
+};
+const WALLET_RECHARGE_STATUS_STYLE: Record<WalletRechargeStatus, { background: string; color: string; border: string }> = {
+  PENDING: { background: '#fef3c7', color: '#d97706', border: '#f59e0b' },
+  APPROVED: { background: '#dcfce7', color: '#16a34a', border: '#16a34a' },
+  REJECTED: { background: '#fee2e2', color: '#dc2626', border: '#dc2626' },
+};
+
+const WALLET_MANUAL_CREDIT_REASON_AR: Record<WalletManualCreditReason, string> = {
+  COMPENSATION: 'تعويض',
+  GIFT: 'هدية',
+  CASHBACK: 'كاش باك',
+  BALANCE_CORRECTION: 'تصحيح رصيد',
+  OTHER: 'أخرى',
+};
+
 // ── Sidebar nav items ──────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
@@ -176,6 +230,9 @@ const NAV_ITEMS = [
   ]},
   { group: 'المالية', items: [
     { key: 'financial',   icon: '💰', label: 'المالية والعمولات' },
+    { key: 'wallet_manual_credit', icon: '💳', label: 'إضافة رصيد يدوي' },
+    { key: 'wallet_recharge_requests', icon: '🏦', label: 'طلبات شحن المحفظة' },
+    { key: 'wallet_transactions', icon: '📒', label: 'سجل معاملات المحفظة' },
     { key: 'whatsapp_support', icon: '💬', label: 'دعم واتساب' },
   ]},
   { group: 'الإدارة', items: [
@@ -249,8 +306,38 @@ export default function AdminClient() {
   const [commissionPercentage, setCommissionPercentage] = useState('10');
   const [supportWhatsappNumber, setSupportWhatsappNumber] = useState('');
   const [supportWhatsappMessage, setSupportWhatsappMessage] = useState('');
+  const [walletRechargeRequests, setWalletRechargeRequests] = useState<WalletRechargeRequest[]>([]);
+  const [walletRechargeActionLoadingId, setWalletRechargeActionLoadingId] = useState<string | null>(null);
+  const [selectedRechargeRequest, setSelectedRechargeRequest] = useState<WalletRechargeRequest | null>(null);
+  const [manualCreditSubmitting, setManualCreditSubmitting] = useState(false);
+  const [manualDebitSubmitting, setManualDebitSubmitting] = useState(false);
+  const [manualCreditSearch, setManualCreditSearch] = useState('');
+  const [walletTransactions, setWalletTransactions] = useState<WalletTransactionRow[]>([]);
+  const [walletTransactionSearch, setWalletTransactionSearch] = useState('');
+  const [walletTransactionTypeFilter, setWalletTransactionTypeFilter] = useState('ALL');
+  const [walletTransactionDateFrom, setWalletTransactionDateFrom] = useState('');
+  const [walletTransactionDateTo, setWalletTransactionDateTo] = useState('');
+  const [walletTransactionPage, setWalletTransactionPage] = useState(1);
+  const [manualCreditForm, setManualCreditForm] = useState({
+    userId: '',
+    amount: '',
+    reasonType: 'COMPENSATION' as WalletManualCreditReason,
+    adminNote: '',
+  });
   const [activePanel, setActivePanel] = useState('overview');
   const [message, setMessage] = useState('');
+  const pageSize = 10;
+  const filteredWalletTransactions = walletTransactions.filter((tx) => {
+    const matchesType = walletTransactionTypeFilter === 'ALL' || tx.type === walletTransactionTypeFilter;
+    const hay = `${tx.type} ${tx.adminNote ?? ''} ${tx.reasonType ?? ''}`.toLowerCase();
+    const matchesSearch = !walletTransactionSearch || hay.includes(walletTransactionSearch.toLowerCase());
+    const createdAtDate = tx.createdAt ? new Date(tx.createdAt) : null;
+    const fromOk = !walletTransactionDateFrom || (createdAtDate && createdAtDate >= new Date(`${walletTransactionDateFrom}T00:00:00`));
+    const toOk = !walletTransactionDateTo || (createdAtDate && createdAtDate <= new Date(`${walletTransactionDateTo}T23:59:59`));
+    return matchesType && matchesSearch && fromOk && toOk;
+  });
+  const walletTransactionPageCount = Math.max(1, Math.ceil(filteredWalletTransactions.length / pageSize));
+  const pagedWalletTransactions = filteredWalletTransactions.slice((walletTransactionPage - 1) * pageSize, walletTransactionPage * pageSize);
 
   // ── Home CMS state ────────────────────────────────────────────────────────────
   const [cmsTab, setCmsTab] = useState<'banners' | 'promotions' | 'sections'>('banners');
@@ -347,6 +434,9 @@ export default function AdminClient() {
     if (activePanel === 'users') loadUsers();
     if (activePanel === 'notifications') loadNotifHistory();
     if (activePanel === 'security') loadSecurity();
+    if (activePanel === 'wallet_recharge_requests') loadWalletRechargeRequests();
+    if (activePanel === 'wallet_manual_credit') loadUsers();
+    if (activePanel === 'wallet_transactions') loadUsers();
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [authorized, activePanel]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -480,6 +570,165 @@ export default function AdminClient() {
     });
   }
 
+  async function loadWalletRechargeRequests() {
+    try {
+      const res = await api<WalletRechargeRequest[]>('/admin/wallet-recharge-requests');
+      setWalletRechargeRequests(Array.isArray(res) ? res : []);
+    } catch {
+      setMessage('فشل تحميل طلبات شحن المحفظة');
+    }
+  }
+
+  async function handleWalletRechargeDecision(
+    request: WalletRechargeRequest,
+    decision: 'approve' | 'reject',
+  ) {
+    if (walletRechargeActionLoadingId) return;
+    const actionLabel = decision === 'approve' ? 'الموافقة' : 'الرفض';
+    const note = window.prompt(
+      decision === 'approve'
+        ? 'أدخل ملاحظة الموافقة قبل إضافة الرصيد'
+        : 'أدخل سبب الرفض قبل تحديث الطلب',
+      request.adminNote ?? '',
+    )?.trim();
+    if (!note) {
+      setMessage('الملاحظة الإدارية مطلوبة');
+      return;
+    }
+    const confirmed = window.confirm(
+      decision === 'approve'
+        ? `تأكيد الموافقة على طلب الشحن بمبلغ ${formatEGP(request.amount)}؟ سيتم إضافة الرصيد للمحفظة.`
+        : `تأكيد رفض طلب الشحن بمبلغ ${formatEGP(request.amount)}؟`,
+    );
+    if (!confirmed) return;
+
+    try {
+      setWalletRechargeActionLoadingId(request.id);
+      await api(
+        `/admin/wallet-recharge-requests/${request.id}/${decision}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ admin_note: note }),
+        },
+      );
+      setMessage(`تم ${actionLabel} بنجاح`);
+      await loadWalletRechargeRequests();
+      await loadUsers();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : `فشل ${actionLabel}`);
+    } finally {
+      setWalletRechargeActionLoadingId(null);
+    }
+  }
+
+  async function submitManualWalletCredit() {
+    if (manualCreditSubmitting) return;
+    if (!manualCreditForm.userId || !manualCreditForm.amount || !manualCreditForm.adminNote.trim()) {
+      setMessage('يرجى اختيار العميل وإدخال المبلغ والملاحظة الإدارية');
+      return;
+    }
+    const numericAmount = Number(manualCreditForm.amount);
+    if (numericAmount > 5000 && !confirm(`تحذير: المبلغ ${numericAmount} جنيه أكبر من 5000. هل أنت متأكد من إضافة الرصيد؟`)) return;
+    if (!confirm(`تأكيد إضافة ${manualCreditForm.amount} جنيه إلى رصيد العميل؟`)) return;
+    try {
+      setManualCreditSubmitting(true);
+      const res = await api<{
+        message: string;
+        user: { id: string; walletBalance: string; phone?: string; name?: string };
+        transaction: { id: string };
+      }>('/admin/wallet/manual-credit', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: manualCreditForm.userId,
+          amount: Number(manualCreditForm.amount),
+          reason_type: manualCreditForm.reasonType,
+          admin_note: manualCreditForm.adminNote.trim(),
+        }),
+      });
+      setMessage('تمت إضافة الرصيد بنجاح');
+      setManualCreditForm({
+        userId: '',
+        amount: '',
+        reasonType: 'COMPENSATION',
+        adminNote: '',
+      });
+      await loadUsers();
+      return res;
+    } catch (e) {
+      setMessage(String(e));
+      throw e;
+    } finally {
+      setManualCreditSubmitting(false);
+    }
+  }
+
+  async function submitManualWalletDebit() {
+    if (manualDebitSubmitting) return;
+    if (!manualCreditForm.userId || !manualCreditForm.amount || !manualCreditForm.adminNote.trim()) {
+      setMessage('يرجى اختيار العميل وإدخال المبلغ والملاحظة الإدارية');
+      return;
+    }
+    const numericAmount = Number(manualCreditForm.amount);
+    if (numericAmount > 5000 && !confirm(`تحذير: مبلغ الخصم ${numericAmount} جنيه أكبر من 5000. هل أنت متأكد؟`)) return;
+    if (!confirm(`تأكيد خصم ${manualCreditForm.amount} جنيه من رصيد العميل؟`)) return;
+    try {
+      setManualDebitSubmitting(true);
+      await api('/admin/wallet/manual-debit', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: manualCreditForm.userId,
+          amount: numericAmount,
+          admin_note: manualCreditForm.adminNote.trim(),
+        }),
+      });
+      setMessage('تم خصم الرصيد بنجاح');
+      setManualCreditForm({
+        userId: '',
+        amount: '',
+        reasonType: 'COMPENSATION',
+        adminNote: '',
+      });
+      await loadUsers();
+      setWalletTransactions([]);
+    } catch (e) {
+      setMessage(String(e));
+      throw e;
+    } finally {
+      setManualDebitSubmitting(false);
+    }
+  }
+
+  async function loadWalletTransactions(userId: string) {
+    try {
+      const res = await api<WalletTransactionRow[]>(`/admin/users/${userId}/wallet-transactions`);
+      setWalletTransactions(Array.isArray(res) ? res : []);
+      setWalletTransactionPage(1);
+    } catch {
+      setMessage('فشل تحميل سجل معاملات المحفظة');
+    }
+  }
+
+  function exportWalletTransactionsCSV(rows: WalletTransactionRow[]) {
+    const headers = ['ID', 'النوع', 'المبلغ', 'الرصيد قبل', 'الرصيد بعد', 'الملاحظة', 'التاريخ'];
+    const csvRows = rows.map((tx) => [
+      tx.id,
+      tx.type,
+      String(tx.amount),
+      String(tx.balanceBefore),
+      String(tx.balanceAfter),
+      `"${(tx.adminNote ?? '').replace(/"/g, '""')}"`,
+      formatDate(tx.createdAt),
+    ]);
+    const csv = [headers, ...csvRows].map(r => r.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `wallet_transactions_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   // ── Analytics ─────────────────────────────────────────────────────────────────
   async function loadAnalytics() {
     setAnalyticsLoading(true);
@@ -521,7 +770,7 @@ export default function AdminClient() {
     setNotifLoading(true);
     try {
       const endpoint = notifTarget === 'customers' ? '/admin/notifications/customers' : '/admin/notifications/merchants';
-      await api(endpoint, { method: 'POST', body: JSON.stringify({ title: notifTitle, body: notifBody }) });
+      await api(endpoint, { method: 'POST', body: JSON.stringify({ title: notifTitle, message: notifBody }) });
       setNotifMessage('تم إرسال الإشعار بنجاح');
       setNotifTitle(''); setNotifBody('');
       loadNotifHistory();
@@ -1664,6 +1913,423 @@ export default function AdminClient() {
             </div>
           )}
 
+          {activePanel === 'wallet_recharge_requests' && (
+            <div>
+              <div className="pg-header">
+                <div>
+                  <h2 className="pg-title">طلبات شحن المحفظة</h2>
+                  <p className="pg-subtitle">مراجعة طلبات الشحن اليدوي الواردة من العملاء</p>
+                </div>
+              </div>
+
+              <div className="analytics-grid">
+                <div className="an-card gold">
+                  <div className="an-card-icon">🏦</div>
+                  <div className="an-card-label">إجمالي الطلبات</div>
+                  <div className="an-card-value">{walletRechargeRequests.length}</div>
+                </div>
+                <div className="an-card orange">
+                  <div className="an-card-icon">⏳</div>
+                  <div className="an-card-label">طلبات قيد المراجعة</div>
+                  <div className="an-card-value">
+                    {walletRechargeRequests.filter(r => r.status === 'PENDING').length}
+                  </div>
+                </div>
+              </div>
+
+              <div className="list-panel">
+                <div className="lp-head"><h3>قائمة الطلبات</h3></div>
+                <div className="lp-body">
+                  {walletRechargeRequests.map((request) => {
+                    const screenshotUrl = request.screenshotUrl.startsWith('http')
+                      ? request.screenshotUrl
+                      : `${apiUrl}${request.screenshotUrl}`;
+                    const isPending = request.status === 'PENDING';
+                    const isLoading = walletRechargeActionLoadingId === request.id;
+                    return (
+                      <div
+                        key={request.id}
+                        className="lp-row"
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '88px minmax(160px,1.2fr) minmax(120px,0.9fr) minmax(140px,1fr) minmax(170px,auto)',
+                          gap: 14,
+                          alignItems: 'center',
+                        }}
+                      >
+                        <button
+                          className="topbar-btn"
+                          onClick={() => setSelectedRechargeRequest(request)}
+                          style={{
+                            padding: 0,
+                            width: 88,
+                            height: 66,
+                            overflow: 'hidden',
+                            borderRadius: 12,
+                            border: '1px solid rgba(71,39,21,0.1)',
+                            background: '#fff',
+                          }}
+                        >
+                          <img
+                            src={screenshotUrl}
+                            alt="wallet recharge screenshot"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        </button>
+
+                        <div className="lp-info">
+                          <strong>{request.user?.name || 'عميل'}</strong>
+                          <div className="lp-sub" dir="ltr">{request.user?.phone || '—'}</div>
+                          <div className="lp-sub">{formatDate(request.createdAt)}</div>
+                        </div>
+
+                        <div className="lp-info">
+                          <strong>{formatEGP(request.amount)}</strong>
+                          <div className="lp-sub">{WALLET_RECHARGE_METHOD_AR[request.paymentMethod] ?? request.paymentMethod}</div>
+                        </div>
+
+                        <div className="lp-info">
+                          <strong>{WALLET_RECHARGE_STATUS_AR[request.status] ?? request.status}</strong>
+                          <div className="lp-sub">{request.adminNote || 'لا توجد ملاحظة إدارية بعد'}</div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          <span
+                            className="sec-badge"
+                            style={{
+                              background: WALLET_RECHARGE_STATUS_STYLE[request.status as WalletRechargeStatus]?.background,
+                              color: WALLET_RECHARGE_STATUS_STYLE[request.status as WalletRechargeStatus]?.color,
+                              border: `1px solid ${WALLET_RECHARGE_STATUS_STYLE[request.status as WalletRechargeStatus]?.border}`,
+                            }}
+                          >
+                            {WALLET_RECHARGE_STATUS_AR[request.status] ?? request.status}
+                          </span>
+                          {isPending && (
+                            <>
+                              <button
+                                className="action-btn"
+                                onClick={() => { void handleWalletRechargeDecision(request, 'approve'); }}
+                                disabled={isLoading}
+                                style={{
+                                  background: '#16a34a',
+                                  color: '#fff',
+                                  border: 'none',
+                                  minWidth: 72,
+                                  opacity: isLoading ? 0.7 : 1,
+                                }}
+                              >
+                                {isLoading ? 'جارٍ...' : 'قبول'}
+                              </button>
+                              <button
+                                className="action-btn"
+                                onClick={() => { void handleWalletRechargeDecision(request, 'reject'); }}
+                                disabled={isLoading}
+                                style={{
+                                  background: '#dc2626',
+                                  color: '#fff',
+                                  border: 'none',
+                                  minWidth: 72,
+                                  opacity: isLoading ? 0.7 : 1,
+                                }}
+                              >
+                                {isLoading ? 'جارٍ...' : 'رفض'}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {walletRechargeRequests.length === 0 && (
+                    <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>
+                      لا توجد طلبات شحن محفظة حتى الآن
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activePanel === 'wallet_manual_credit' && (
+            <div>
+              <div className="pg-header">
+                <div>
+                  <h2 className="pg-title">إضافة رصيد يدوي</h2>
+                  <p className="pg-subtitle">إضافة رصيد للمحفظة يدويًا لأغراض التعويض أو الهدية أو التصحيح</p>
+                </div>
+              </div>
+
+              <div className="analytics-grid">
+                <div className="an-card gold">
+                  <div className="an-card-icon">💳</div>
+                  <div className="an-card-label">العميل المحدد</div>
+                  <div className="an-card-value">
+                    {manualCreditForm.userId
+                      ? ((Array.isArray(users) ? users : []).find(u => u.id === manualCreditForm.userId)?.name || 'عميل')
+                      : '—'}
+                  </div>
+                </div>
+                <div className="an-card blue">
+                  <div className="an-card-icon">💰</div>
+                  <div className="an-card-label">الرصيد الحالي</div>
+                  <div className="an-card-value">
+                    {manualCreditForm.userId
+                      ? formatEGP(((Array.isArray(users) ? users : []).find(u => u.id === manualCreditForm.userId)?.walletBalance as any) ?? 0)
+                      : formatEGP(0)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="panel" style={{ padding: 20, borderRadius: 24 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 18 }}>
+                  <div>
+                    <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }}>بحث العميل بالاسم أو الهاتف</label>
+                    <input
+                      value={manualCreditSearch}
+                      onChange={(e) => setManualCreditSearch(e.target.value)}
+                      placeholder="ابحث بالاسم أو رقم الهاتف"
+                      style={{ width: '100%', marginTop: 6 }}
+                    />
+                    <div className="list-panel" style={{ marginTop: 12 }}>
+                      <div className="lp-body" style={{ maxHeight: 340, overflow: 'auto' }}>
+                        {(Array.isArray(users) ? users : [])
+                          .filter(u => !manualCreditSearch || (u.phone ?? '').includes(manualCreditSearch) || (u.name ?? '').includes(manualCreditSearch))
+                          .slice(0, 20)
+                          .map((u) => {
+                            const selected = manualCreditForm.userId === u.id;
+                            return (
+                              <button
+                                key={u.id}
+                                onClick={() => setManualCreditForm((f) => ({ ...f, userId: u.id }))}
+                                style={{
+                                  width: '100%',
+                                  textAlign: 'right',
+                                  background: selected ? 'rgba(192,139,34,0.12)' : 'transparent',
+                                  border: 'none',
+                                  borderBottom: '1px solid rgba(71,39,21,0.08)',
+                                  padding: '14px 12px',
+                                  cursor: 'pointer',
+                                  borderRadius: 14,
+                                }}
+                              >
+                                <div style={{ fontFamily: 'Cairo', fontWeight: 800, color: 'var(--brown)' }}>{u.name || 'بدون اسم'}</div>
+                                <div style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }} dir="ltr">{u.phone || '—'}</div>
+                                <div style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }}>
+                                  الرصيد الحالي: {formatEGP((u as any).walletBalance ?? 0)}
+                                </div>
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    <div>
+                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }}>المبلغ</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={manualCreditForm.amount}
+                        onChange={(e) => setManualCreditForm((f) => ({ ...f, amount: e.target.value }))}
+                        placeholder="50"
+                        style={{ width: '100%', marginTop: 6 }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }}>نوع السبب</label>
+                      <select
+                        value={manualCreditForm.reasonType}
+                        onChange={(e) => setManualCreditForm((f) => ({ ...f, reasonType: e.target.value as WalletManualCreditReason }))}
+                        style={{ width: '100%', marginTop: 6 }}
+                      >
+                        {(Object.entries(WALLET_MANUAL_CREDIT_REASON_AR) as [WalletManualCreditReason, string][]).map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }}>ملاحظة إدارية</label>
+                      <textarea
+                        rows={5}
+                        value={manualCreditForm.adminNote}
+                        onChange={(e) => setManualCreditForm((f) => ({ ...f, adminNote: e.target.value }))}
+                        placeholder="اذكر سبب الإضافة اليدوية بوضوح"
+                        style={{ width: '100%', marginTop: 6, resize: 'vertical' }}
+                      />
+                    </div>
+
+                    <button
+                      className="action-btn"
+                      onClick={() => { void submitManualWalletCredit(); }}
+                      disabled={manualCreditSubmitting || manualDebitSubmitting}
+                      style={{
+                        background: 'var(--brown)',
+                        color: 'var(--cream)',
+                        border: 'none',
+                        opacity: manualCreditSubmitting ? 0.7 : 1,
+                      }}
+                    >
+                      {manualCreditSubmitting ? 'جارٍ إضافة الرصيد...' : 'إضافة الرصيد'}
+                    </button>
+                    <button
+                      className="action-btn"
+                      onClick={() => { void submitManualWalletDebit(); }}
+                      disabled={manualCreditSubmitting || manualDebitSubmitting}
+                      style={{
+                        background: '#dc2626',
+                        color: '#fff',
+                        border: 'none',
+                        opacity: manualDebitSubmitting ? 0.7 : 1,
+                      }}
+                    >
+                      {manualDebitSubmitting ? 'جارٍ خصم الرصيد...' : 'خصم الرصيد'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activePanel === 'wallet_transactions' && (
+            <div>
+              <div className="pg-header">
+                <div>
+                  <h2 className="pg-title">سجل معاملات المحفظة</h2>
+                  <p className="pg-subtitle">استعراض جميع الحركات المالية الخاصة بمحافظ العملاء</p>
+                </div>
+              </div>
+
+              <div className="panel" style={{ padding: 20, borderRadius: 24 }}>
+                <div className="analytics-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }}>
+                  <div className="an-card gold">
+                    <div className="an-card-icon">💰</div>
+                    <div className="an-card-label">الرصيد الحالي</div>
+                    <div className="an-card-value">
+                      {manualCreditForm.userId
+                        ? formatEGP(((Array.isArray(users) ? users : []).find(u => u.id === manualCreditForm.userId)?.walletBalance as any) ?? 0)
+                        : formatEGP(0)}
+                    </div>
+                  </div>
+                  <div className="an-card green">
+                    <div className="an-card-icon">➕</div>
+                    <div className="an-card-label">إجمالي الإضافات</div>
+                    <div className="an-card-value">{formatEGP(walletTransactions.filter(tx => tx.amount > 0).reduce((sum, tx) => sum + tx.amount, 0))}</div>
+                  </div>
+                  <div className="an-card red">
+                    <div className="an-card-icon">➖</div>
+                    <div className="an-card-label">إجمالي الخصومات</div>
+                    <div className="an-card-value">{formatEGP(Math.abs(walletTransactions.filter(tx => tx.amount < 0).reduce((sum, tx) => sum + tx.amount, 0)))}</div>
+                  </div>
+                  <div className="an-card blue">
+                    <div className="an-card-icon">📒</div>
+                    <div className="an-card-label">عدد المعاملات</div>
+                    <div className="an-card-value">{walletTransactions.length}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 18 }}>
+                  <div>
+                    <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }}>اختر عميلًا لعرض سجل المحفظة</label>
+                    <div className="list-panel" style={{ marginTop: 12 }}>
+                      <div className="lp-body" style={{ maxHeight: 420, overflow: 'auto' }}>
+                        {(Array.isArray(users) ? users : []).slice(0, 40).map((u) => {
+                          const selected = manualCreditForm.userId === u.id;
+                          return (
+                            <button
+                              key={u.id}
+                              onClick={() => {
+                                setManualCreditForm((f) => ({ ...f, userId: u.id }));
+                                void loadWalletTransactions(u.id);
+                              }}
+                              style={{
+                                width: '100%',
+                                textAlign: 'right',
+                                background: selected ? 'rgba(192,139,34,0.12)' : 'transparent',
+                                border: 'none',
+                                borderBottom: '1px solid rgba(71,39,21,0.08)',
+                                padding: '14px 12px',
+                                cursor: 'pointer',
+                                borderRadius: 14,
+                              }}
+                            >
+                              <div style={{ fontFamily: 'Cairo', fontWeight: 800, color: 'var(--brown)' }}>{u.name || 'بدون اسم'}</div>
+                              <div style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }} dir="ltr">{u.phone || '—'}</div>
+                              <div style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }}>
+                                الرصيد الحالي: {formatEGP((u as any).walletBalance ?? 0)}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="list-panel">
+                      <div className="lp-head">
+                        <h3>المعاملات</h3>
+                        <button className="action-btn" onClick={() => exportWalletTransactionsCSV(filteredWalletTransactions)}>📊 تصدير CSV</button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, padding: 14 }}>
+                        <input
+                          value={walletTransactionSearch}
+                          onChange={(e) => { setWalletTransactionSearch(e.target.value); setWalletTransactionPage(1); }}
+                          placeholder="بحث في الملاحظات أو النوع"
+                        />
+                        <select
+                          value={walletTransactionTypeFilter}
+                          onChange={(e) => { setWalletTransactionTypeFilter(e.target.value); setWalletTransactionPage(1); }}
+                        >
+                          <option value="ALL">كل الأنواع</option>
+                          <option value="MANUAL_CREDIT">MANUAL_CREDIT</option>
+                          <option value="RECHARGE_APPROVED">RECHARGE_APPROVED</option>
+                          <option value="WALLET_DEBIT">WALLET_DEBIT</option>
+                          <option value="REFUND">REFUND</option>
+                          <option value="CASHBACK">CASHBACK</option>
+                          <option value="PURCHASE_PAYMENT">PURCHASE_PAYMENT</option>
+                        </select>
+                        <input type="date" value={walletTransactionDateFrom} onChange={(e) => { setWalletTransactionDateFrom(e.target.value); setWalletTransactionPage(1); }} />
+                        <input type="date" value={walletTransactionDateTo} onChange={(e) => { setWalletTransactionDateTo(e.target.value); setWalletTransactionPage(1); }} />
+                      </div>
+                      <div className="lp-body" style={{ maxHeight: 420, overflow: 'auto' }}>
+                        {pagedWalletTransactions.map((tx) => (
+                          <div key={tx.id} className="lp-row" style={{ display: 'grid', gap: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                              <strong>{tx.type}</strong>
+                              <strong style={{ color: tx.amount >= 0 ? '#16a34a' : '#dc2626' }}>
+                                {tx.amount >= 0 ? '+' : '-'}{formatEGP(Math.abs(tx.amount))}
+                              </strong>
+                            </div>
+                            <div className="lp-sub">
+                              الرصيد قبل: {formatEGP(tx.balanceBefore)} • بعد: {formatEGP(tx.balanceAfter)}
+                            </div>
+                            <div className="lp-sub">{tx.adminNote || 'بدون ملاحظة'}</div>
+                            <div className="lp-sub">{formatDate(tx.createdAt)}</div>
+                          </div>
+                        ))}
+                        {filteredWalletTransactions.length === 0 && (
+                          <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>
+                            اختر عميلًا لعرض سجل المعاملات
+                          </div>
+                        )}
+                      </div>
+                      {filteredWalletTransactions.length > pageSize && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 14 }}>
+                          <button className="action-btn" disabled={walletTransactionPage <= 1} onClick={() => setWalletTransactionPage(p => Math.max(1, p - 1))}>السابق</button>
+                          <span style={{ fontFamily: 'Cairo', color: 'var(--muted)' }}>صفحة {walletTransactionPage} من {walletTransactionPageCount}</span>
+                          <button className="action-btn" disabled={walletTransactionPage >= walletTransactionPageCount} onClick={() => setWalletTransactionPage(p => Math.min(walletTransactionPageCount, p + 1))}>التالي</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ════════════════════════════════════════════════════════
               TECHNICAL MONITORING PANEL
              ════════════════════════════════════════════════════════ */}
@@ -1968,6 +2634,53 @@ export default function AdminClient() {
                   <div className="totals-row"><span>المجموع الفرعي</span><span dir="ltr">{formatEGP(selectedOrder.subtotal)}</span></div>
                   <div className="totals-row grand"><span>الإجمالي الكلي</span><span dir="ltr">{formatEGP(selectedOrder.total)}</span></div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {selectedRechargeRequest && (
+        <div className="modal-overlay" onClick={() => setSelectedRechargeRequest(null)}>
+          <div className="modal-card" dir="rtl" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <div className="modal-eyebrow">طلب شحن المحفظة</div>
+                <div className="modal-order-id">#{selectedRechargeRequest.id.slice(-8).toUpperCase()}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span
+                  className="status-pill"
+                  style={{
+                    background: WALLET_RECHARGE_STATUS_STYLE[selectedRechargeRequest.status as WalletRechargeStatus]?.background,
+                    color: WALLET_RECHARGE_STATUS_STYLE[selectedRechargeRequest.status as WalletRechargeStatus]?.color,
+                    border: `1px solid ${WALLET_RECHARGE_STATUS_STYLE[selectedRechargeRequest.status as WalletRechargeStatus]?.border}`,
+                  }}
+                >
+                  {WALLET_RECHARGE_STATUS_AR[selectedRechargeRequest.status] ?? selectedRechargeRequest.status}
+                </span>
+                <button className="close-btn" onClick={() => setSelectedRechargeRequest(null)}>✕</button>
+              </div>
+            </div>
+            <div className="modal-body">
+              <div className="modal-section">
+                <div className="modal-section-title">👤 بيانات العميل</div>
+                <div className="modal-grid">
+                  <div className="modal-field"><label>الاسم</label><p>{selectedRechargeRequest.user?.name || 'عميل'}</p></div>
+                  <div className="modal-field"><label>الهاتف</label><p dir="ltr">{selectedRechargeRequest.user?.phone || '—'}</p></div>
+                  <div className="modal-field"><label>المبلغ</label><p>{formatEGP(selectedRechargeRequest.amount)}</p></div>
+                  <div className="modal-field"><label>طريقة التحويل</label><p>{WALLET_RECHARGE_METHOD_AR[selectedRechargeRequest.paymentMethod] ?? selectedRechargeRequest.paymentMethod}</p></div>
+                  <div className="modal-field full-width"><label>الملاحظة الإدارية</label><p>{selectedRechargeRequest.adminNote || 'لا توجد ملاحظة حتى الآن'}</p></div>
+                  <div className="modal-field"><label>تاريخ الإنشاء</label><p dir="ltr">{formatDate(selectedRechargeRequest.createdAt)}</p></div>
+                  <div className="modal-field"><label>آخر تحديث</label><p dir="ltr">{formatDate(selectedRechargeRequest.updatedAt)}</p></div>
+                </div>
+              </div>
+              <div className="modal-section">
+                <div className="modal-section-title">🧾 صورة التحويل</div>
+                <img
+                  src={selectedRechargeRequest.screenshotUrl.startsWith('http') ? selectedRechargeRequest.screenshotUrl : `${apiUrl}${selectedRechargeRequest.screenshotUrl}`}
+                  alt="wallet recharge proof"
+                  style={{ width: '100%', maxHeight: 420, objectFit: 'contain', borderRadius: 18, background: '#fff8ec' }}
+                />
               </div>
             </div>
           </div>
