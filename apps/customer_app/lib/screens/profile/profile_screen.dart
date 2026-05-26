@@ -8,6 +8,8 @@ import '../../widgets/widgets.dart';
 import 'account_header.dart';
 import 'account_section.dart';
 import 'account_tile.dart';
+import 'wallet_history_screen.dart';
+import 'wallet_recharge_sheet.dart';
 
 /// Full-featured account / profile screen for سوق العسل.
 ///
@@ -22,35 +24,53 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // ── Animation controller for staggered entry ─────────────────────────────
   late final AnimationController _entryCtrl;
   String _supportWhatsappNumber = '';
   String _supportWhatsappMessage =
       'السلام عليكم، محتاج مساعدة في تطبيق سوق العسل';
+  List<dynamic> _walletRechargeRequests = [];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _entryCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
     )..forward();
     _loadSupportWhatsapp();
+    _loadWalletRechargeRequests();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<AppState>().refreshProfile(silent: true);
+      }
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _entryCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      context.read<AppState>().refreshProfile(silent: true);
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   Future<void> _refresh() async {
     await Future.wait([
+      context.read<AppState>().refreshProfile(),
       context.read<AppState>().loadOrders(),
       _loadSupportWhatsapp(),
+      _loadWalletRechargeRequests(),
     ]);
   }
 
@@ -75,12 +95,35 @@ class _ProfileScreenState extends State<ProfileScreen>
     } catch (_) {}
   }
 
+  Future<void> _loadWalletRechargeRequests() async {
+    try {
+      final api = ApiService(token: context.read<AppState>().token);
+      final res = await api.get('/customer/wallet-recharge-requests', auth: true);
+      if (!mounted) return;
+      setState(() {
+        _walletRechargeRequests = res is List ? res : [];
+      });
+    } catch (_) {}
+  }
+
   Future<void> _openSupportWhatsapp() async {
     final number = _supportWhatsappNumber.trim();
     if (number.isEmpty) return;
     final normalized = number.startsWith('+') ? number.substring(1) : number;
     final message = Uri.encodeComponent(_supportWhatsappMessage.trim());
     await _launch('https://wa.me/$normalized?text=$message');
+  }
+
+  Future<void> _openWalletRechargeSheet() async {
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => WalletRechargeSheet(
+        token: context.read<AppState>().token,
+        onSubmitted: _loadWalletRechargeRequests,
+      ),
+    );
   }
 
   void _toast(String msg) {
@@ -174,7 +217,13 @@ class _ProfileScreenState extends State<ProfileScreen>
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('🍯', style: TextStyle(fontSize: 52)),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.asset(
+                  'assets/branding/souq_alasal_logo.png',
+                  width: 64, height: 64, fit: BoxFit.cover,
+                ),
+              ),
               const SizedBox(height: 8),
               const Text(
                 'سوق العسل',
@@ -224,6 +273,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     final name = rawName.isNotEmpty && rawName != phone
         ? rawName
         : 'أهلاً بك 👋';
+    final walletBalance = _walletBalanceText(st.user?['walletBalance']);
+    final latestRecharge =
+        _walletRechargeRequests.isNotEmpty ? _walletRechargeRequests.first : null;
 
     return Scaffold(
       backgroundColor: kBackground,
@@ -253,11 +305,125 @@ class _ProfileScreenState extends State<ProfileScreen>
             SliverToBoxAdapter(
               child: FadeInWidget(
                 delay: const Duration(milliseconds: 80),
-                child: _buildWalletRow(),
+                child: _buildWalletRow(walletBalance),
               ),
             ),
 
+            if (latestRecharge != null)
+              SliverToBoxAdapter(
+                child: FadeInWidget(
+                  delay: const Duration(milliseconds: 95),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: kSurface,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: kBorder),
+                        boxShadow: kCardShadow,
+                      ),
+                      child: Row(
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: kHoney.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.timelapse_rounded,
+                              color: kHoney,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'آخر طلب شحن',
+                                  style: TextStyle(
+                                    fontFamily: 'Cairo',
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14,
+                                    color: kTextDark,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _walletRechargeStatusLabel(
+                                    latestRecharge['status']?.toString(),
+                                  ),
+                                  style: const TextStyle(
+                                    fontFamily: 'Cairo',
+                                    fontSize: 12,
+                                    color: kTextMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _badge(
+                            _walletRechargeStatusShort(
+                              latestRecharge['status']?.toString(),
+                            ),
+                            _walletRechargeStatusColor(
+                              latestRecharge['status']?.toString(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+            SliverToBoxAdapter(
+              child: FadeInWidget(
+                delay: const Duration(milliseconds: 110),
+                child: AccountSection(
+                  title: 'المحفظة',
+                  tiles: [
+                    AccountTile(
+                      icon: Icons.add_card_rounded,
+                      title: 'شحن المحفظة',
+                      subtitle: 'أرسل طلب شحن يدوي وارفع صورة إثبات التحويل',
+                      iconColor: kHoney,
+                      trailing: const Text(
+                        'إرسال طلب',
+                        style: TextStyle(
+                          fontFamily: 'Cairo',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          color: kHoney,
+                        ),
+                      ),
+                      onTap: _openWalletRechargeSheet,
+                    ),
+                    AccountTile(
+                      icon: Icons.receipt_long_rounded,
+                      title: 'سجل المحفظة',
+                      subtitle: 'عرض جميع عمليات الشحن والإضافة والخصم',
+                      iconColor: kRoyal,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const WalletHistoryScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
             // ── Account section ────────────────────────────────────────────
             SliverToBoxAdapter(
@@ -515,7 +681,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // ── Sub-widgets ───────────────────────────────────────────────────────────
 
-  Widget _buildWalletRow() {
+  Widget _buildWalletRow(String walletBalance) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
       child: IntrinsicHeight(
@@ -526,10 +692,10 @@ class _ProfileScreenState extends State<ProfileScreen>
               child: _statCard(
                 icon: Icons.account_balance_wallet_rounded,
                 label: 'محفظتي',
-                value: '0.00',
+                value: walletBalance,
                 unit: 'جنيه',
                 color: kHoney,
-                onTap: () => _toast('المحفظة — قريباً!'),
+                onTap: _openWalletRechargeSheet,
               ),
             ),
             const SizedBox(width: 12),
@@ -631,6 +797,50 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
       ),
     );
+  }
+
+  String _walletRechargeStatusLabel(String? status) {
+    switch (status) {
+      case 'APPROVED':
+        return 'تمت مراجعة طلب الشحن والموافقة عليه';
+      case 'REJECTED':
+        return 'تم رفض طلب الشحن، يرجى مراجعة الإدارة';
+      case 'PENDING':
+      default:
+        return 'طلب الشحن قيد المراجعة من الإدارة';
+    }
+  }
+
+  String _walletRechargeStatusShort(String? status) {
+    switch (status) {
+      case 'APPROVED':
+        return 'مقبول';
+      case 'REJECTED':
+        return 'مرفوض';
+      case 'PENDING':
+      default:
+        return 'قيد المراجعة';
+    }
+  }
+
+  Color _walletRechargeStatusColor(String? status) {
+    switch (status) {
+      case 'APPROVED':
+        return kSuccess;
+      case 'REJECTED':
+        return kError;
+      case 'PENDING':
+      default:
+        return kHoney;
+    }
+  }
+
+  String _walletBalanceText(dynamic value) {
+    if (value == null) return '0.00';
+    if (value is num) return value.toStringAsFixed(2);
+    final parsed = double.tryParse(value.toString());
+    if (parsed == null) return '0.00';
+    return parsed.toStringAsFixed(2);
   }
 
   Widget _buildReferralBanner() {

@@ -17,6 +17,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   shared_preferences: ^2.3.0
   provider: ^6.1.2
+  image_picker: ^1.1.2
   url_launcher: ^6.3.0
   google_maps_flutter: ^2.14.0
   geolocator: ^14.0.2
@@ -30,6 +31,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/branding/souq_alasal_logo.png
     - assets/store_logos/noor.png
     - assets/store_logos/rahma.png
     - assets/store_logos/sultan.png

@@ -43,15 +43,18 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 32),
               // Logo
               Container(
-                width: 90, height: 90,
+                width: 100, height: 100,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [kAmber, kDarkHoney],
-                    begin: Alignment.topLeft, end: Alignment.bottomRight),
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: kLiftedShadow,
                 ),
-                child: const Center(child: Text('🍯', style: TextStyle(fontSize: 46))),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Image.asset(
+                    'assets/branding/souq_alasal_logo.png',
+                    fit: BoxFit.cover,
+                  ),
+                ),
               ),
               const SizedBox(height: 20),
               const Text('سوق العسل', style: TextStyle(

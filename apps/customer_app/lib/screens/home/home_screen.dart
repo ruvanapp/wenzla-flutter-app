@@ -110,10 +110,15 @@ class _HomeScreenState extends State<HomeScreen> {
           Container(
             width: 36, height: 36,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [kAmber, kDarkHoney]),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Center(child: Text('🍯', style: TextStyle(fontSize: 18))),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/branding/souq_alasal_logo.png',
+                fit: BoxFit.cover,
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           const Expanded(
