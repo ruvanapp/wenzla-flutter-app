@@ -1,0 +1,80 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Secrets & signing — never commit
+android/key.properties
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+*.keystore
+*.jks
+*.p12
+*.p8
+android/local.properties
+local.properties
+.env
+.env.*
+
+# Build artifacts & generated reports
+build/
+*.aab
+*.apk
+*.log
+CART_PERSISTENCE_REPORT.md
+CHECKOUT_REGRESSION_FIX_REPORT.md
+CUSTOMER_PLAYSTORE_BLOCKERS_FIX_REPORT.md
+CUSTOMER_UI_REVIEW.md
+DESIGN_SYSTEM_REPORT.md
+DEVICE_VALIDATION_REPORT.md
+FINAL_QA_REPORT.md
+FIX_REPORT.md
+FULL_RUNTIME_QA_REPORT.md
+PERFORMANCE_REPORT.md
+PRODUCTION_READY_REPORT.md
+REGRESSION_QA_REPORT.md
+ROOT_CAUSE_REPORT.md
+SAMSUNG_STORE_FIX_QA_SUMMARY.md
+STORE_SCROLL_FIX_REPORT.md
+VERIFICATION_REPORT_CART_FIX.md
