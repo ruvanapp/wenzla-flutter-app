@@ -55,6 +55,51 @@ class ApiService {
             body: jsonEncode(body),
           ));
 
+  Future<dynamic> postMultipart(
+    String path, {
+    required Map<String, String> fields,
+    String? filePath,
+    String fileField = 'image',
+    bool auth = false,
+  }) async {
+    try {
+      if (filePath != null && filePath.isNotEmpty) {
+        final file = File(filePath);
+        final exists = await file.exists();
+        final size = exists ? await file.length() : -1;
+        debugPrint('[API] multipart file path=$filePath exists=$exists size=$size');
+      }
+      final req = http.MultipartRequest('POST', Uri.parse('$kApiUrl$path'));
+      req.headers['Accept'] = 'application/json';
+      if (auth && token != null) {
+        req.headers['Authorization'] = 'Bearer $token';
+      }
+      req.fields.addAll(fields);
+      if (filePath != null && filePath.isNotEmpty) {
+        req.files.add(await http.MultipartFile.fromPath(fileField, filePath));
+      }
+      final streamed = await req.send().timeout(_kTimeout);
+      final res = await http.Response.fromStream(streamed);
+      debugPrint('[API] MULTIPART ${res.statusCode} ${res.request?.url}: ${res.body}');
+      return _parse(res);
+    } on TimeoutException {
+      _logError('MULTIPART TIMEOUT', 0);
+      return null;
+    } on HttpException catch (e) {
+      _logError('MULTIPART HTTP: ${e.message}', 0);
+      return null;
+    } on SocketException catch (e) {
+      _logError('MULTIPART SOCKET: ${e.message}', 0);
+      return null;
+    } on http.ClientException catch (e) {
+      _logError('MULTIPART CLIENT: ${e.message}', 0);
+      return null;
+    } catch (e) {
+      _logError('MULTIPART UNEXPECTED: $e', 0);
+      return null;
+    }
+  }
+
   // ── Core request engine with retry ──────────────────────────────────────────
 
   /// Executes [call] with [_kTimeout], retrying on transient network errors

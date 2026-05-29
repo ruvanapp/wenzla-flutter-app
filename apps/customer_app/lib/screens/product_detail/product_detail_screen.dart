@@ -27,9 +27,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final name    = (product['name']        as String?) ?? '';
     final desc    = (product['description'] as String?) ?? '';
     final price   = double.tryParse(product['price']?.toString() ?? '0') ?? 0;
+    final oldPrice = double.tryParse(product['oldPrice']?.toString() ?? '') ;
     final imgUrl  = (product['imageUrl']    as String?);
     final weight  = (product['weight']      as String?) ?? (product['size'] as String?) ?? '';
     final stock   = (product['stock']       as int?) ?? (product['quantity'] as int?) ?? 999;
+    final displayRating      = (product['displayRating'] as num?)?.toDouble();
+    final displayReviewCount = (product['displayReviewCount'] as num?)?.toInt();
+    final displaySalesCount  = (product['displaySalesCount']  as num?)?.toInt();
 
     return Scaffold(
       backgroundColor: kBackground,
@@ -144,18 +148,81 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                   children: [
                                     const Text('السعر', style: TextStyle(
                                       fontFamily: 'Cairo', fontSize: 11, color: kTextMuted)),
-                                    Text('${price.toStringAsFixed(0)} ج.م',
-                                      style: const TextStyle(fontFamily: 'Cairo',
-                                        fontWeight: FontWeight.w800, fontSize: 28, color: kHoney)),
+                                    Row(
+                                      textDirection: TextDirection.rtl,
+                                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                                      textBaseline: TextBaseline.alphabetic,
+                                      children: [
+                                        Text('${price.toStringAsFixed(0)} ج.م',
+                                          style: const TextStyle(fontFamily: 'Cairo',
+                                            fontWeight: FontWeight.w800, fontSize: 28, color: kHoney)),
+                                        if (oldPrice != null && oldPrice > price) ...[
+                                          const SizedBox(width: 8),
+                                          Text('${oldPrice.toStringAsFixed(0)} ج.م',
+                                            style: const TextStyle(
+                                              fontFamily: 'Cairo', fontSize: 14,
+                                              color: kTextMuted,
+                                              decoration: TextDecoration.lineThrough,
+                                              decorationColor: kTextMuted)),
+                                        ],
+                                      ],
+                                    ),
                                   ],
                                 ),
                               ),
-                              if (weight.isNotEmpty)
+                              if (oldPrice != null && oldPrice > price)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCFCE7),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '-${((oldPrice - price) / oldPrice * 100).toStringAsFixed(0)}%',
+                                    style: const TextStyle(
+                                      fontFamily: 'Cairo', fontSize: 12,
+                                      fontWeight: FontWeight.w700, color: Color(0xFF16A34A)),
+                                  ),
+                                )
+                              else if (weight.isNotEmpty)
                                 HoneyChip(weight, background: kSurface, textColor: kTextBrown, fontSize: 12),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
+
+                        // Stats row (rating / reviews / sales)
+                        if (displayRating != null || displayReviewCount != null || displaySalesCount != null)
+                          Row(
+                            textDirection: TextDirection.rtl,
+                            children: [
+                              if (displayRating != null) ...[
+                                const Icon(Icons.star_rounded, color: kHoney, size: 16),
+                                const SizedBox(width: 4),
+                                Text(displayRating.toStringAsFixed(1),
+                                  style: const TextStyle(fontFamily: 'Cairo',
+                                    fontWeight: FontWeight.w700, fontSize: 13, color: kTextDark)),
+                                const SizedBox(width: 12),
+                              ],
+                              if (displayReviewCount != null) ...[
+                                const Icon(Icons.rate_review_outlined, color: kTextMuted, size: 14),
+                                const SizedBox(width: 4),
+                                Text('$displayReviewCount تقييم',
+                                  style: const TextStyle(fontFamily: 'Cairo',
+                                    fontSize: 12, color: kTextMuted)),
+                                const SizedBox(width: 12),
+                              ],
+                              if (displaySalesCount != null) ...[
+                                const Icon(Icons.shopping_bag_outlined, color: kTextMuted, size: 14),
+                                const SizedBox(width: 4),
+                                Text('+$displaySalesCount مبيعة',
+                                  style: const TextStyle(fontFamily: 'Cairo',
+                                    fontSize: 12, color: kTextMuted)),
+                              ],
+                            ],
+                          ),
+                        if (displayRating != null || displayReviewCount != null || displaySalesCount != null)
+                          const SizedBox(height: 12),
 
                         // Stock indicator
                         if (stock < 10 && stock > 0)

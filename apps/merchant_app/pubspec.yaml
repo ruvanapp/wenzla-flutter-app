@@ -1,7 +1,7 @@
 name: wenzla_merchant_app
 description: Merchant mobile app for سوق العسل marketplace.
 publish_to: 'none'
-version: 1.0.4+9
+version: 1.0.14+14
 
 environment:
   sdk: '>=3.4.0 <4.0.0'

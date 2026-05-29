@@ -630,7 +630,9 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
       BuildContext context, Map<String, dynamic> p) {
     final name   = (p['name']     as String?) ?? '';
     final price  = double.tryParse(p['price']?.toString() ?? '0') ?? 0;
+    final oldPrice = double.tryParse(p['oldPrice']?.toString() ?? '');
     final imgUrl = (p['imageUrl'] as String?);
+    final displayRating = (p['displayRating'] as num?)?.toDouble();
     final st = context.watch<AppState>();
     final cartIndex = st.cart.indexWhere((item) => (item as Map)['id'] == p['id']);
     final cartQty = cartIndex >= 0
@@ -763,6 +765,25 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
                           fontSize:    12,
                           color:       kTextDark,
                         )),
+                    if (displayRating != null)
+                      Row(
+                        children: [
+                          const Icon(Icons.star_rounded, color: kHoney, size: 12),
+                          const SizedBox(width: 2),
+                          Text(displayRating.toStringAsFixed(1),
+                            style: const TextStyle(fontFamily: 'Cairo',
+                              fontWeight: FontWeight.w600, fontSize: 10, color: kTextMuted)),
+                        ],
+                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (oldPrice != null && oldPrice > price)
+                          Text('${oldPrice.toStringAsFixed(0)} ج.م',
+                            style: const TextStyle(
+                              fontFamily: 'Cairo', fontSize: 10, color: kTextMuted,
+                              decoration: TextDecoration.lineThrough,
+                              decorationColor: kTextMuted)),
                     Row(children: [
                       Expanded(
                         child: Text('${price.toStringAsFixed(0)} ج.م',
@@ -841,6 +862,8 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
                           ),
                         ),
                     ]),
+                      ],
+                    ),
                   ],
                 ),
               ),

@@ -23,17 +23,36 @@ type Merchant = {
   storeName: string;
   description?: string;
   address?: string;
+  businessHours?: string;
+  logoUrl?: string;
+  bannerUrl?: string;
+  isVisible?: boolean;
   status: string;
-  user: { phone: string };
+  blockedReason?: string;
+  commissionPercentage?: number | null;
+  effectiveCommissionPercentage?: number;
+  createdAt?: string;
+  user: { id?: string; phone: string; name?: string };
 };
 
 type Product = {
   id: string;
   name: string;
+  description?: string;
+  weight?: string;
   price: string;
+  oldPrice?: string | null;
+  imageUrl?: string | null;
+  extraImages?: string[];
   stock: number;
   status: string;
-  merchant: { storeName: string };
+  displayRating?: number | null;
+  displayReviewCount?: number | null;
+  displaySalesCount?: number | null;
+  categoryId?: string | null;
+  merchantId: string;
+  merchant: { id: string; storeName: string };
+  category?: { id: string; name: string } | null;
 };
 
 type OrderItem = {
@@ -301,7 +320,29 @@ export default function AdminClient() {
   const [password, setPassword] = useState('');
   const [overview, setOverview] = useState<Overview>({ merchants: 0, products: 0, orders: 0, sales: 0, commission: 0 });
   const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [merchantSearch, setMerchantSearch] = useState('');
+  const [merchantStatusFilter, setMerchantStatusFilter] = useState('ALL');
+  const [editingMerchant, setEditingMerchant] = useState<Merchant | null>(null);
+  const [editMerchantForm, setEditMerchantForm] = useState({ storeName: '', description: '', address: '', businessHours: '', commissionPercentage: '' });
+  const [merchantLogoUploading, setMerchantLogoUploading] = useState(false);
+  const [merchantBannerUploading, setMerchantBannerUploading] = useState(false);
+  const [showCreateMerchant, setShowCreateMerchant] = useState(false);
+  const [createMerchantForm, setCreateMerchantForm] = useState({ phone: '', storeName: '', description: '', address: '', password: '' });
+  const [createMerchantLoading, setCreateMerchantLoading] = useState(false);
+  const [merchantActionLoading, setMerchantActionLoading] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [productSearch, setProductSearch] = useState('');
+  const [productMerchantFilter, setProductMerchantFilter] = useState('ALL');
+  const [showCreateProduct, setShowCreateProduct] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [productForm, setProductForm] = useState({
+    merchantId: '', categoryId: '', name: '', description: '', weight: '',
+    price: '', oldPrice: '', stock: '0', status: 'ACTIVE',
+    imageUrl: '', displayRating: '', displayReviewCount: '', displaySalesCount: '',
+  });
+  const [productImageUploading, setProductImageUploading] = useState(false);
+  const [productSaving, setProductSaving] = useState(false);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [commissionPercentage, setCommissionPercentage] = useState('10');
   const [supportWhatsappNumber, setSupportWhatsappNumber] = useState('');
@@ -482,18 +523,20 @@ export default function AdminClient() {
 
   async function refreshAll() {
     try {
-      const [ov, mer, prod, com, set] = await Promise.all([
+      const [ov, mer, prod, com, set, cats] = await Promise.all([
         api<Overview>('/admin/overview'),
         api<Merchant[]>('/admin/merchants'),
         api<Product[]>('/admin/products'),
         api<Commission[]>('/admin/commissions'),
         api<{ percentage: number }>('/admin/settings/commission'),
+        api<{ id: string; name: string }[]>('/admin/categories'),
       ]);
       setOverview(ov);
       setMerchants(mer);
       setProducts(prod);
       setCommissions(com);
       setCommissionPercentage(String(set.percentage));
+      setCategories(cats ?? []);
     } catch { setMessage('خطأ في تحميل البيانات — تحقق من الاتصال'); }
   }
 
@@ -533,10 +576,216 @@ export default function AdminClient() {
     await refreshAll();
   }
 
+  const toast = {
+    success: (msg: string) => setMessage(msg),
+    error: (msg: string) => setMessage(msg),
+  };
+
+  async function editMerchantInfo(id: string) {
+    try {
+      setMerchantActionLoading(id);
+      await api(`/admin/merchants/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          storeName: editMerchantForm.storeName || undefined,
+          description: editMerchantForm.description || undefined,
+          address: editMerchantForm.address || undefined,
+          businessHours: editMerchantForm.businessHours || undefined,
+        }),
+      });
+      if (editMerchantForm.commissionPercentage !== '') {
+        const pct = editMerchantForm.commissionPercentage === 'default' ? null : Number(editMerchantForm.commissionPercentage);
+        await api(`/admin/merchants/${id}/commission`, { method: 'PATCH', body: JSON.stringify({ percentage: pct }) });
+      }
+      toast.success('تم حفظ بيانات التاجر');
+      setEditingMerchant(null);
+      await refreshAll();
+    } catch (e) { toast.error('فشل الحفظ: ' + String(e)); }
+    finally { setMerchantActionLoading(null); }
+  }
+
+  async function toggleMerchantVisibility(merchant: Merchant) {
+    try {
+      setMerchantActionLoading(merchant.id);
+      await api(`/admin/merchants/${merchant.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isVisible: !merchant.isVisible }),
+      });
+      toast.success(merchant.isVisible ? 'تم إخفاء المتجر' : 'تم إظهار المتجر');
+      await refreshAll();
+    } catch (e) { toast.error('فشل التحديث'); }
+    finally { setMerchantActionLoading(null); }
+  }
+
+  async function updateMerchantStatus(id: string, status: string, blockedReason?: string) {
+    try {
+      setMerchantActionLoading(id);
+      await api(`/admin/merchants/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, blockedReason }),
+      });
+      toast.success('تم تحديث حالة التاجر');
+      await refreshAll();
+    } catch (e) { toast.error('فشل التحديث'); }
+    finally { setMerchantActionLoading(null); }
+  }
+
+  async function uploadMerchantLogo(merchantId: string, file: File) {
+    setMerchantLogoUploading(true);
+    try {
+      const form = new FormData();
+      form.append('image', file);
+      const res = await fetch(`${apiUrl}/uploads/store-logo`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Upload failed');
+      await api(`/admin/merchants/${merchantId}`, { method: 'PATCH', body: JSON.stringify({ logoUrl: data.imageUrl }) });
+      toast.success('تم رفع الشعار');
+      await refreshAll();
+      setEditingMerchant(prev => prev ? { ...prev, logoUrl: data.imageUrl } : null);
+    } catch (e) { toast.error('فشل رفع الشعار: ' + String(e)); }
+    finally { setMerchantLogoUploading(false); }
+  }
+
+  async function uploadMerchantBanner(merchantId: string, file: File) {
+    setMerchantBannerUploading(true);
+    try {
+      const form = new FormData();
+      form.append('image', file);
+      const res = await fetch(`${apiUrl}/uploads/store-banner`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Upload failed');
+      await api(`/admin/merchants/${merchantId}`, { method: 'PATCH', body: JSON.stringify({ bannerUrl: data.imageUrl }) });
+      toast.success('تم رفع البانر');
+      await refreshAll();
+      setEditingMerchant(prev => prev ? { ...prev, bannerUrl: data.imageUrl } : null);
+    } catch (e) { toast.error('فشل رفع البانر: ' + String(e)); }
+    finally { setMerchantBannerUploading(false); }
+  }
+
+  async function createMerchant() {
+    if (!createMerchantForm.phone || !createMerchantForm.storeName) {
+      toast.error('رقم الهاتف واسم المتجر مطلوبان');
+      return;
+    }
+    setCreateMerchantLoading(true);
+    try {
+      await api('/admin/merchants', {
+        method: 'POST',
+        body: JSON.stringify({
+          phone: createMerchantForm.phone,
+          storeName: createMerchantForm.storeName,
+          description: createMerchantForm.description || undefined,
+          address: createMerchantForm.address || undefined,
+          password: createMerchantForm.password || undefined,
+        }),
+      });
+      toast.success('تم إنشاء التاجر بنجاح');
+      setShowCreateMerchant(false);
+      setCreateMerchantForm({ phone: '', storeName: '', description: '', address: '', password: '' });
+      await refreshAll();
+    } catch (e) { toast.error('فشل الإنشاء: ' + String(e)); }
+    finally { setCreateMerchantLoading(false); }
+  }
+
   async function updateProduct(id: string, status: string) {
     await api(`/admin/products/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
     await refreshAll();
   }
+
+  function openCreateProduct() {
+    setProductForm({
+      merchantId: merchants[0]?.id ?? '', categoryId: '', name: '', description: '',
+      weight: '', price: '', oldPrice: '', stock: '0', status: 'ACTIVE',
+      imageUrl: '', displayRating: '', displayReviewCount: '', displaySalesCount: '',
+    });
+    setEditingProduct(null);
+    setShowCreateProduct(true);
+  }
+
+  function openEditProduct(p: Product) {
+    setProductForm({
+      merchantId: p.merchantId, categoryId: p.categoryId ?? '',
+      name: p.name, description: p.description ?? '', weight: p.weight ?? '',
+      price: p.price, oldPrice: p.oldPrice ?? '', stock: String(p.stock),
+      status: p.status, imageUrl: p.imageUrl ?? '',
+      displayRating: p.displayRating != null ? String(p.displayRating) : '',
+      displayReviewCount: p.displayReviewCount != null ? String(p.displayReviewCount) : '',
+      displaySalesCount: p.displaySalesCount != null ? String(p.displaySalesCount) : '',
+    });
+    setEditingProduct(p);
+    setShowCreateProduct(true);
+  }
+
+  async function uploadProductImage(file: File) {
+    setProductImageUploading(true);
+    try {
+      const form = new FormData();
+      form.append('image', file);
+      const res = await fetch(`${apiUrl}/uploads/product-image`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'فشل رفع الصورة');
+      setProductForm(prev => ({ ...prev, imageUrl: data.imageUrl }));
+      toast.success('تم رفع صورة المنتج');
+    } catch (e) { toast.error('فشل رفع الصورة: ' + String(e)); }
+    finally { setProductImageUploading(false); }
+  }
+
+  async function saveProduct() {
+    if (!productForm.name.trim()) { toast.error('اسم المنتج مطلوب'); return; }
+    if (!productForm.merchantId) { toast.error('يجب اختيار المتجر'); return; }
+    if (!productForm.price || Number(productForm.price) <= 0) { toast.error('السعر مطلوب'); return; }
+    setProductSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        merchantId: productForm.merchantId,
+        categoryId: productForm.categoryId || null,
+        name: productForm.name.trim(),
+        description: productForm.description.trim() || null,
+        weight: productForm.weight.trim() || null,
+        price: Number(productForm.price),
+        oldPrice: productForm.oldPrice ? Number(productForm.oldPrice) : null,
+        imageUrl: productForm.imageUrl || null,
+        stock: Number(productForm.stock),
+        status: productForm.status,
+        displayRating: productForm.displayRating ? Number(productForm.displayRating) : null,
+        displayReviewCount: productForm.displayReviewCount ? Number(productForm.displayReviewCount) : null,
+        displaySalesCount: productForm.displaySalesCount ? Number(productForm.displaySalesCount) : null,
+      };
+      if (editingProduct) {
+        await api(`/admin/products/${editingProduct.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+        toast.success('تم تحديث المنتج');
+      } else {
+        await api('/admin/products', { method: 'POST', body: JSON.stringify(body) });
+        toast.success('تم إنشاء المنتج');
+      }
+      setShowCreateProduct(false);
+      setEditingProduct(null);
+      await refreshAll();
+    } catch (e) { toast.error('فشل الحفظ: ' + String(e)); }
+    finally { setProductSaving(false); }
+  }
+
+  async function deleteProduct(id: string) {
+    if (!confirm('هل تريد حذف هذا المنتج نهائياً؟')) return;
+    try {
+      await api(`/admin/products/${id}`, { method: 'DELETE' });
+      toast.success('تم حذف المنتج');
+      await refreshAll();
+    } catch (e) { toast.error('فشل الحذف: ' + String(e)); }
+  }
+
 
   async function updateOrderStatus(id: string, status: string) {
     try {
@@ -1302,20 +1551,28 @@ export default function AdminClient() {
               <div className="pg-header">
                 <div>
                   <h2 className="pg-title">إدارة التجار</h2>
-                  <p className="pg-subtitle">الموافقة على التجار أو رفضهم أو حظرهم</p>
+                  <p className="pg-subtitle">إنشاء التجار وإدارة حالاتهم وصورهم ومعلوماتهم</p>
                 </div>
                 <div className="pg-actions">
-                  <span style={{ fontFamily: 'Cairo', fontSize: 13, color: 'var(--muted)' }}>{merchants.length} تاجر</span>
+                  <button
+                    className="btn-primary"
+                    onClick={() => setShowCreateMerchant(true)}
+                    style={{ fontFamily: 'Cairo', display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    + إضافة تاجر جديد
+                  </button>
                 </div>
               </div>
 
-              <div className="analytics-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
-                {(['PENDING', 'APPROVED', 'BLOCKED'] as const).map(s => {
-                  const count = merchants.filter(m => m.status === s).length;
-                  const color = s === 'APPROVED' ? 'green' : s === 'PENDING' ? 'gold' : 'orange';
-                  const label = s === 'APPROVED' ? 'موافق عليهم' : s === 'PENDING' ? 'في الانتظار' : 'محظورون';
+              {/* Stats */}
+              <div className="analytics-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 24 }}>
+                {(['ALL','PENDING','APPROVED','BLOCKED'] as const).map(s => {
+                  const count = s === 'ALL' ? merchants.length : merchants.filter(m => m.status === s).length;
+                  const color = s === 'APPROVED' ? 'green' : s === 'PENDING' ? 'gold' : s === 'BLOCKED' ? 'red' : 'blue';
+                  const label = s === 'ALL' ? 'الكل' : s === 'APPROVED' ? 'موافق عليهم' : s === 'PENDING' ? 'في الانتظار' : 'محظورون';
                   return (
-                    <div key={s} className={`an-card ${color}`}>
+                    <div key={s} className={`an-card ${color}`} style={{ cursor: 'pointer', outline: merchantStatusFilter === s ? '2px solid var(--brown)' : 'none' }}
+                      onClick={() => setMerchantStatusFilter(s)}>
                       <div className="an-card-label">{label}</div>
                       <div className="an-card-value">{count}</div>
                     </div>
@@ -1323,30 +1580,296 @@ export default function AdminClient() {
                 })}
               </div>
 
+              {/* Search */}
+              <div style={{ marginBottom: 16 }}>
+                <input
+                  type="text"
+                  placeholder="بحث باسم المتجر أو رقم الهاتف..."
+                  value={merchantSearch}
+                  onChange={e => setMerchantSearch(e.target.value)}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              {/* List */}
               <div className="list-panel">
-                <div className="lp-head"><h3>قائمة التجار</h3></div>
+                <div className="lp-head">
+                  <h3>قائمة التجار ({merchants.filter(m => {
+                    const matchStatus = merchantStatusFilter === 'ALL' || m.status === merchantStatusFilter;
+                    const q = merchantSearch.toLowerCase();
+                    const matchSearch = !q || m.storeName.toLowerCase().includes(q) || m.user.phone.includes(q);
+                    return matchStatus && matchSearch;
+                  }).length})</h3>
+                </div>
                 <div className="lp-body">
-                  {merchants.map(merchant => (
-                    <div className="lp-row" key={merchant.id} style={{ gap: 16 }}>
-                      <div className="lp-rank" style={{ background: merchant.status === 'APPROVED' ? '#16a34a' : merchant.status === 'PENDING' ? '#c8860a' : '#dc2626' }}>
-                        {merchant.storeName.charAt(0)}
+                  {merchants
+                    .filter(m => {
+                      const matchStatus = merchantStatusFilter === 'ALL' || m.status === merchantStatusFilter;
+                      const q = merchantSearch.toLowerCase();
+                      const matchSearch = !q || m.storeName.toLowerCase().includes(q) || m.user.phone.includes(q);
+                      return matchStatus && matchSearch;
+                    })
+                    .map(merchant => (
+                    <div className="lp-row" key={merchant.id} style={{ gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                      {/* Logo avatar */}
+                      <div style={{ position: 'relative', flexShrink: 0 }}>
+                        {merchant.logoUrl ? (
+                          <img src={merchant.logoUrl} alt="logo" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(71,39,21,0.15)' }} />
+                        ) : (
+                          <div className="lp-rank" style={{ width: 48, height: 48, background: merchant.status === 'APPROVED' ? '#16a34a' : merchant.status === 'PENDING' ? '#c8860a' : '#dc2626', fontSize: 18 }}>
+                            {merchant.storeName.charAt(0)}
+                          </div>
+                        )}
+                        {merchant.isVisible === false && (
+                          <span style={{ position: 'absolute', bottom: -2, right: -2, background: '#6b7280', borderRadius: '50%', width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fff' }}>
+                            🚫
+                          </span>
+                        )}
                       </div>
-                      <div className="lp-info" style={{ flex: 1 }}>
-                        <strong>{merchant.storeName}</strong>
-                        <div className="lp-sub" dir="ltr">{merchant.user.phone} · {merchant.address || 'لا يوجد عنوان'}</div>
+
+                      {/* Info */}
+                      <div className="lp-info" style={{ flex: 1, minWidth: 140 }}>
+                        <strong style={{ fontFamily: 'Cairo', fontSize: 14 }}>{merchant.storeName}</strong>
+                        <div className="lp-sub" dir="ltr" style={{ fontSize: 11 }}>
+                          {merchant.user.phone}
+                          {merchant.address ? ` · ${merchant.address}` : ''}
+                        </div>
+                        {merchant.description && (
+                          <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'Cairo', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>
+                            {merchant.description}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontFamily: 'Cairo', background: merchant.status === 'APPROVED' ? '#dcfce7' : merchant.status === 'PENDING' ? '#fef3c7' : '#fee2e2', color: merchant.status === 'APPROVED' ? '#166534' : merchant.status === 'PENDING' ? '#92400e' : '#991b1b' }}>
+                            {merchant.status === 'APPROVED' ? 'موافق عليه' : merchant.status === 'PENDING' ? 'في الانتظار' : merchant.status === 'REJECTED' ? 'مرفوض' : 'محظور'}
+                          </span>
+                          {merchant.commissionPercentage != null && (
+                            <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontFamily: 'Cairo', background: '#ede9fe', color: '#5b21b6' }}>
+                              عمولة: {merchant.commissionPercentage}%
+                            </span>
+                          )}
+                          {merchant.isVisible === false && (
+                            <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontFamily: 'Cairo', background: '#f3f4f6', color: '#6b7280' }}>
+                              مخفي
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <select
-                        value={merchant.status}
-                        onChange={e => updateMerchant(merchant.id, e.target.value)}
-                        style={{ fontSize: 12, padding: '6px 10px', borderRadius: 10, fontFamily: 'Cairo', border: '1px solid rgba(71,39,21,0.15)', background: 'var(--paper)', color: 'var(--brown)' }}
-                      >
-                        {MERCHANT_STATUSES.map(s => <option key={s}>{s}</option>)}
-                      </select>
+
+                      {/* Actions */}
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <button
+                          onClick={() => {
+                            setEditingMerchant(merchant);
+                            setEditMerchantForm({
+                              storeName: merchant.storeName,
+                              description: merchant.description ?? '',
+                              address: merchant.address ?? '',
+                              businessHours: merchant.businessHours ?? '',
+                              commissionPercentage: merchant.commissionPercentage != null ? String(merchant.commissionPercentage) : '',
+                            });
+                          }}
+                          disabled={merchantActionLoading === merchant.id}
+                          style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, fontFamily: 'Cairo', border: '1px solid rgba(71,39,21,0.2)', background: 'var(--paper)', color: 'var(--brown)', cursor: 'pointer' }}
+                        >
+                          تعديل
+                        </button>
+
+                        {merchant.status === 'PENDING' && (
+                          <>
+                            <button
+                              onClick={() => updateMerchantStatus(merchant.id, 'APPROVED')}
+                              disabled={merchantActionLoading === merchant.id}
+                              style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, fontFamily: 'Cairo', border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer' }}
+                            >
+                              موافقة
+                            </button>
+                            <button
+                              onClick={() => updateMerchantStatus(merchant.id, 'REJECTED')}
+                              disabled={merchantActionLoading === merchant.id}
+                              style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, fontFamily: 'Cairo', border: 'none', background: '#dc2626', color: '#fff', cursor: 'pointer' }}
+                            >
+                              رفض
+                            </button>
+                          </>
+                        )}
+                        {merchant.status === 'APPROVED' && (
+                          <button
+                            onClick={() => {
+                              const reason = window.prompt('سبب الإيقاف (اختياري):') ?? '';
+                              updateMerchantStatus(merchant.id, 'BLOCKED', reason || undefined);
+                            }}
+                            disabled={merchantActionLoading === merchant.id}
+                            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, fontFamily: 'Cairo', border: 'none', background: '#f59e0b', color: '#fff', cursor: 'pointer' }}
+                          >
+                            إيقاف
+                          </button>
+                        )}
+                        {merchant.status === 'BLOCKED' && (
+                          <button
+                            onClick={() => updateMerchantStatus(merchant.id, 'APPROVED')}
+                            disabled={merchantActionLoading === merchant.id}
+                            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, fontFamily: 'Cairo', border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer' }}
+                          >
+                            تفعيل
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => toggleMerchantVisibility(merchant)}
+                          disabled={merchantActionLoading === merchant.id}
+                          title={merchant.isVisible === false ? 'إظهار في التطبيق' : 'إخفاء من التطبيق'}
+                          style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, fontFamily: 'Cairo', border: '1px solid rgba(71,39,21,0.2)', background: merchant.isVisible === false ? '#f3f4f6' : '#e0f2fe', color: merchant.isVisible === false ? '#6b7280' : '#0369a1', cursor: 'pointer' }}
+                        >
+                          {merchant.isVisible === false ? '👁 إظهار' : '🚫 إخفاء'}
+                        </button>
+                      </div>
                     </div>
                   ))}
-                  {merchants.length === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>لا يوجد تجار</div>}
+                  {merchants.filter(m => {
+                    const matchStatus = merchantStatusFilter === 'ALL' || m.status === merchantStatusFilter;
+                    const q = merchantSearch.toLowerCase();
+                    return (merchantStatusFilter === 'ALL' || matchStatus) && (!q || m.storeName.toLowerCase().includes(q) || m.user.phone.includes(q));
+                  }).length === 0 && (
+                    <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>
+                      لا يوجد تجار
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* ── Edit Merchant Modal ────────────────────────────────── */}
+              {editingMerchant && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                  <div style={{ background: 'var(--paper)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                      <h3 style={{ fontFamily: 'Cairo', fontSize: 18, color: 'var(--brown)', margin: 0 }}>
+                        تعديل: {editingMerchant.storeName}
+                      </h3>
+                      <button onClick={() => setEditingMerchant(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)' }}>✕</button>
+                    </div>
+
+                    {/* Logo & Banner upload */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                      <div>
+                        <div style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>شعار المتجر</div>
+                        <div style={{ border: '2px dashed rgba(71,39,21,0.2)', borderRadius: 10, padding: 12, textAlign: 'center', position: 'relative' }}>
+                          {editingMerchant.logoUrl ? (
+                            <img src={editingMerchant.logoUrl} alt="logo" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, marginBottom: 8 }} />
+                          ) : (
+                            <div style={{ width: 80, height: 80, background: 'rgba(71,39,21,0.1)', borderRadius: 8, margin: '0 auto 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>🏪</div>
+                          )}
+                          <label style={{ display: 'block', fontSize: 12, fontFamily: 'Cairo', color: 'var(--brown)', cursor: 'pointer', padding: '4px 10px', background: 'rgba(71,39,21,0.08)', borderRadius: 6 }}>
+                            {merchantLogoUploading ? 'جاري الرفع...' : 'رفع شعار'}
+                            <input type="file" accept="image/*" style={{ display: 'none' }} disabled={merchantLogoUploading}
+                              onChange={e => { const f = e.target.files?.[0]; if (f) uploadMerchantLogo(editingMerchant.id, f); }} />
+                          </label>
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>صورة الغلاف</div>
+                        <div style={{ border: '2px dashed rgba(71,39,21,0.2)', borderRadius: 10, padding: 12, textAlign: 'center' }}>
+                          {editingMerchant.bannerUrl ? (
+                            <img src={editingMerchant.bannerUrl} alt="banner" style={{ width: '100%', height: 80, objectFit: 'cover', borderRadius: 8, marginBottom: 8 }} />
+                          ) : (
+                            <div style={{ width: '100%', height: 80, background: 'rgba(71,39,21,0.1)', borderRadius: 8, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>🖼</div>
+                          )}
+                          <label style={{ display: 'block', fontSize: 12, fontFamily: 'Cairo', color: 'var(--brown)', cursor: 'pointer', padding: '4px 10px', background: 'rgba(71,39,21,0.08)', borderRadius: 6 }}>
+                            {merchantBannerUploading ? 'جاري الرفع...' : 'رفع غلاف'}
+                            <input type="file" accept="image/*" style={{ display: 'none' }} disabled={merchantBannerUploading}
+                              onChange={e => { const f = e.target.files?.[0]; if (f) uploadMerchantBanner(editingMerchant.id, f); }} />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Fields */}
+                    {[
+                      { key: 'storeName', label: 'اسم المتجر', placeholder: 'مثال: عسل سدر ملكي' },
+                      { key: 'description', label: 'وصف المتجر', placeholder: 'وصف مختصر عن المتجر' },
+                      { key: 'address', label: 'العنوان', placeholder: 'المدينة، المنطقة' },
+                      { key: 'businessHours', label: 'ساعات العمل', placeholder: 'مثال: 9 صباحاً - 10 مساءً' },
+                    ].map(({ key, label, placeholder }) => (
+                      <div key={key} style={{ marginBottom: 14 }}>
+                        <label style={{ display: 'block', fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', marginBottom: 5 }}>{label}</label>
+                        <input
+                          value={editMerchantForm[key as keyof typeof editMerchantForm]}
+                          onChange={e => setEditMerchantForm(prev => ({ ...prev, [key]: e.target.value }))}
+                          placeholder={placeholder}
+                          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                    ))}
+
+                    {/* Commission */}
+                    <div style={{ marginBottom: 20 }}>
+                      <label style={{ display: 'block', fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', marginBottom: 5 }}>نسبة العمولة (% - اتركه فارغاً للافتراضي)</label>
+                      <input
+                        type="number" min="0" max="100" step="0.5"
+                        value={editMerchantForm.commissionPercentage}
+                        onChange={e => setEditMerchantForm(prev => ({ ...prev, commissionPercentage: e.target.value }))}
+                        placeholder="الافتراضي للمنصة"
+                        style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                      <button onClick={() => setEditingMerchant(null)} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.2)', background: 'var(--paper)', fontFamily: 'Cairo', fontSize: 13, cursor: 'pointer', color: 'var(--brown)' }}>
+                        إلغاء
+                      </button>
+                      <button
+                        onClick={() => editMerchantInfo(editingMerchant.id)}
+                        disabled={merchantActionLoading === editingMerchant.id}
+                        style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: 'var(--brown)', color: '#fff', fontFamily: 'Cairo', fontSize: 13, cursor: 'pointer' }}
+                      >
+                        {merchantActionLoading === editingMerchant.id ? 'جاري الحفظ...' : 'حفظ التغييرات'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Create Merchant Modal ──────────────────────────────── */}
+              {showCreateMerchant && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                  <div style={{ background: 'var(--paper)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                      <h3 style={{ fontFamily: 'Cairo', fontSize: 18, color: 'var(--brown)', margin: 0 }}>إضافة تاجر جديد</h3>
+                      <button onClick={() => setShowCreateMerchant(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)' }}>✕</button>
+                    </div>
+                    {[
+                      { key: 'phone', label: 'رقم الهاتف *', placeholder: '+201xxxxxxxxx', type: 'tel' },
+                      { key: 'storeName', label: 'اسم المتجر *', placeholder: 'مثال: عسل سدر ملكي', type: 'text' },
+                      { key: 'description', label: 'وصف المتجر', placeholder: 'اختياري', type: 'text' },
+                      { key: 'address', label: 'العنوان', placeholder: 'اختياري', type: 'text' },
+                      { key: 'password', label: 'كلمة مرور مؤقتة', placeholder: 'اختياري — سيتم توليدها تلقائياً', type: 'password' },
+                    ].map(({ key, label, placeholder, type }) => (
+                      <div key={key} style={{ marginBottom: 14 }}>
+                        <label style={{ display: 'block', fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', marginBottom: 5 }}>{label}</label>
+                        <input
+                          type={type}
+                          value={createMerchantForm[key as keyof typeof createMerchantForm]}
+                          onChange={e => setCreateMerchantForm(prev => ({ ...prev, [key]: e.target.value }))}
+                          placeholder={placeholder}
+                          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+                      <button onClick={() => setShowCreateMerchant(false)} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.2)', background: 'var(--paper)', fontFamily: 'Cairo', fontSize: 13, cursor: 'pointer', color: 'var(--brown)' }}>
+                        إلغاء
+                      </button>
+                      <button
+                        onClick={createMerchant}
+                        disabled={createMerchantLoading}
+                        style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: 'var(--brown)', color: '#fff', fontFamily: 'Cairo', fontSize: 13, cursor: 'pointer' }}
+                      >
+                        {createMerchantLoading ? 'جاري الإنشاء...' : 'إنشاء التاجر'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1355,45 +1878,286 @@ export default function AdminClient() {
              ════════════════════════════════════════════════════════ */}
           {activePanel === 'products' && (
             <div>
+              {/* Header */}
               <div className="pg-header">
                 <div>
                   <h2 className="pg-title">إدارة المنتجات</h2>
-                  <p className="pg-subtitle">مراجعة وإدارة جميع منتجات السوق</p>
+                  <p className="pg-subtitle">إنشاء وتعديل وإدارة منتجات السوق</p>
                 </div>
-                <span style={{ fontFamily: 'Cairo', fontSize: 13, color: 'var(--muted)', alignSelf: 'center' }}>{products.length} منتج</span>
+                <div className="pg-actions">
+                  <button className="topbar-btn" onClick={refreshAll}>🔄 تحديث</button>
+                  <button
+                    onClick={openCreateProduct}
+                    style={{ padding: '9px 18px', borderRadius: 12, background: 'linear-gradient(135deg,var(--orange),var(--gold))', color: '#fff', fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', boxShadow: '0 2px 8px rgba(212,140,28,0.35)' }}
+                  >+ إضافة منتج</button>
+                </div>
               </div>
 
               {/* Quick stats */}
-              <div className="analytics-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }}>
+              <div className="analytics-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 20 }}>
                 <div className="an-card blue"><div className="an-card-icon">📦</div><div className="an-card-label">إجمالي المنتجات</div><div className="an-card-value">{products.length}</div></div>
                 <div className="an-card green"><div className="an-card-icon">✅</div><div className="an-card-label">نشطة</div><div className="an-card-value">{products.filter(p => p.status === 'ACTIVE').length}</div></div>
                 <div className="an-card orange"><div className="an-card-icon">⚠️</div><div className="an-card-label">نفد المخزون</div><div className="an-card-value">{products.filter(p => p.stock === 0).length}</div></div>
                 <div className="an-card" style={{ background: 'linear-gradient(135deg,#fecaca,#fee2e2)', border: '1px solid #dc2626' }}><div className="an-card-icon">🚫</div><div className="an-card-label">محظورة</div><div className="an-card-value">{products.filter(p => p.status === 'BLOCKED').length}</div></div>
               </div>
 
-              <div className="list-panel">
-                <div className="lp-head"><h3>قائمة المنتجات</h3></div>
-                <div className="lp-body">
-                  {products.map(product => (
-                    <div className="lp-row" key={product.id}>
-                      <div className="lp-info" style={{ flex: 1 }}>
-                        <strong>{product.name}</strong>
-                        <div className="lp-sub">{product.merchant.storeName} · {formatEGP(product.price)} · مخزون: {product.stock}</div>
+              {/* Filters */}
+              <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                  type="text" placeholder="🔍 بحث بالاسم..."
+                  value={productSearch} onChange={e => setProductSearch(e.target.value)}
+                  style={{ padding: '8px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, direction: 'rtl', background: 'var(--paper)', color: 'var(--brown)', minWidth: 220 }}
+                />
+                <select
+                  value={productMerchantFilter} onChange={e => setProductMerchantFilter(e.target.value)}
+                  style={{ padding: '8px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)' }}
+                >
+                  <option value="ALL">كل المتاجر</option>
+                  {merchants.map(m => <option key={m.id} value={m.id}>{m.storeName}</option>)}
+                </select>
+              </div>
+
+              {/* Products grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>
+                {products
+                  .filter(p => {
+                    const q = productSearch.toLowerCase();
+                    const nameMatch = !q || p.name.toLowerCase().includes(q);
+                    const mMatch = productMerchantFilter === 'ALL' || p.merchantId === productMerchantFilter;
+                    return nameMatch && mMatch;
+                  })
+                  .map(product => (
+                    <div key={product.id} style={{ background: 'var(--paper)', borderRadius: 16, boxShadow: '0 2px 12px rgba(71,39,21,0.08)', border: '1px solid rgba(71,39,21,0.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                      {/* Image */}
+                      <div style={{ height: 160, background: 'linear-gradient(135deg,#fef3c7,#fde68a)', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+                        {product.imageUrl ? (
+                          <img src={product.imageUrl.startsWith('/') ? `${apiUrl}${product.imageUrl}` : product.imageUrl}
+                            alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 }}>🛒</div>
+                        )}
+                        {/* Status badge */}
+                        <span style={{ position: 'absolute', top: 8, right: 8, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontFamily: 'Cairo', fontWeight: 700,
+                          background: product.status === 'ACTIVE' ? '#dcfce7' : '#fee2e2',
+                          color: product.status === 'ACTIVE' ? '#16a34a' : '#dc2626',
+                          border: `1px solid ${product.status === 'ACTIVE' ? '#16a34a' : '#dc2626'}` }}>
+                          {product.status === 'ACTIVE' ? 'نشط' : 'محظور'}
+                        </span>
+                        {product.stock === 0 && (
+                          <span style={{ position: 'absolute', top: 8, left: 8, padding: '3px 8px', borderRadius: 20, fontSize: 11, fontFamily: 'Cairo', fontWeight: 700, background: '#fef3c7', color: '#d97706', border: '1px solid #d97706' }}>نفد</span>
+                        )}
                       </div>
-                      {product.stock === 0 && <span className="sec-badge" style={{ background: '#fef3c7', color: '#d97706', border: '1px solid #d97706' }}>نفد المخزون</span>}
-                      <select
-                        value={product.status}
-                        onChange={e => updateProduct(product.id, e.target.value)}
-                        style={{ fontSize: 12, padding: '6px 10px', borderRadius: 10, fontFamily: 'Cairo', border: '1px solid rgba(71,39,21,0.15)', background: 'var(--paper)', color: product.status === 'BLOCKED' ? '#dc2626' : 'var(--brown)' }}
-                      >
-                        <option value="ACTIVE">ACTIVE</option>
-                        <option value="BLOCKED">BLOCKED</option>
-                      </select>
+                      {/* Info */}
+                      <div style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 14, color: 'var(--brown)', direction: 'rtl' }}>{product.name}</div>
+                        <div style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', direction: 'rtl' }}>{product.merchant.storeName} {product.category ? `· ${product.category.name}` : ''}</div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, direction: 'rtl' }}>
+                          <span style={{ fontFamily: 'Cairo', fontWeight: 800, fontSize: 16, color: 'var(--orange)' }}>{formatEGP(product.price)}</span>
+                          {product.oldPrice && Number(product.oldPrice) > Number(product.price) && (
+                            <span style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', textDecoration: 'line-through' }}>{formatEGP(product.oldPrice)}</span>
+                          )}
+                          <span style={{ fontFamily: 'Cairo', fontSize: 11, color: 'var(--muted)', marginRight: 'auto' }}>مخزون: {product.stock}</span>
+                        </div>
+                        {(product.displayRating != null || product.displayReviewCount != null || product.displaySalesCount != null) && (
+                          <div style={{ display: 'flex', gap: 10, marginTop: 2, direction: 'rtl' }}>
+                            {product.displayRating != null && <span style={{ fontFamily: 'Cairo', fontSize: 11, color: '#d97706' }}>⭐ {product.displayRating}</span>}
+                            {product.displayReviewCount != null && <span style={{ fontFamily: 'Cairo', fontSize: 11, color: 'var(--muted)' }}>💬 {product.displayReviewCount}</span>}
+                            {product.displaySalesCount != null && <span style={{ fontFamily: 'Cairo', fontSize: 11, color: 'var(--muted)' }}>🛍 {product.displaySalesCount}</span>}
+                          </div>
+                        )}
+                      </div>
+                      {/* Actions */}
+                      <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(71,39,21,0.06)', display: 'flex', gap: 8, direction: 'rtl' }}>
+                        <button onClick={() => openEditProduct(product)}
+                          style={{ flex: 1, padding: '7px 0', borderRadius: 10, background: 'rgba(212,140,28,0.12)', color: 'var(--orange)', fontFamily: 'Cairo', fontWeight: 700, fontSize: 12, border: '1px solid rgba(212,140,28,0.25)', cursor: 'pointer' }}>
+                          ✏️ تعديل
+                        </button>
+                        <button onClick={() => updateProduct(product.id, product.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE')}
+                          style={{ flex: 1, padding: '7px 0', borderRadius: 10, background: product.status === 'ACTIVE' ? 'rgba(220,38,38,0.08)' : 'rgba(22,163,74,0.08)',
+                            color: product.status === 'ACTIVE' ? '#dc2626' : '#16a34a', fontFamily: 'Cairo', fontWeight: 700, fontSize: 12,
+                            border: `1px solid ${product.status === 'ACTIVE' ? 'rgba(220,38,38,0.2)' : 'rgba(22,163,74,0.2)'}`, cursor: 'pointer' }}>
+                          {product.status === 'ACTIVE' ? '🚫 إيقاف' : '✅ تفعيل'}
+                        </button>
+                        <button onClick={() => deleteProduct(product.id)}
+                          style={{ padding: '7px 12px', borderRadius: 10, background: 'rgba(220,38,38,0.07)', color: '#dc2626', fontFamily: 'Cairo', fontSize: 12, border: '1px solid rgba(220,38,38,0.15)', cursor: 'pointer' }}>
+                          🗑
+                        </button>
+                      </div>
                     </div>
                   ))}
-                  {products.length === 0 && <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>لا توجد منتجات</div>}
-                </div>
+                {products.filter(p => {
+                  const q = productSearch.toLowerCase();
+                  const nameMatch = !q || p.name.toLowerCase().includes(q);
+                  const mMatch = productMerchantFilter === 'ALL' || p.merchantId === productMerchantFilter;
+                  return nameMatch && mMatch;
+                }).length === 0 && (
+                  <div style={{ gridColumn: '1/-1', padding: '60px 0', textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo', fontSize: 15 }}>
+                    📦 لا توجد منتجات
+                  </div>
+                )}
               </div>
+
+              {/* ── Create / Edit Product Modal ───────────────────── */}
+              {showCreateProduct && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                  <div style={{ background: 'var(--paper)', borderRadius: 20, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: '100%', maxWidth: 680, maxHeight: '92vh', overflowY: 'auto', direction: 'rtl' }}>
+                    {/* Modal header */}
+                    <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid rgba(71,39,21,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, background: 'var(--paper)', zIndex: 1 }}>
+                      <h3 style={{ fontFamily: 'Cairo', fontWeight: 800, fontSize: 17, color: 'var(--brown)', margin: 0 }}>
+                        {editingProduct ? '✏️ تعديل المنتج' : '➕ إضافة منتج جديد'}
+                      </h3>
+                      <button onClick={() => { setShowCreateProduct(false); setEditingProduct(null); }}
+                        style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: 'rgba(71,39,21,0.08)', cursor: 'pointer', fontSize: 16, color: 'var(--brown)' }}>✕</button>
+                    </div>
+
+                    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
+                      {/* Image upload */}
+                      <div>
+                        <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 8 }}>صورة المنتج</label>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                          <div style={{ width: 110, height: 110, borderRadius: 12, background: 'linear-gradient(135deg,#fef3c7,#fde68a)', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px dashed rgba(212,140,28,0.3)' }}>
+                            {productForm.imageUrl ? (
+                              <img src={productForm.imageUrl.startsWith('/') ? `${apiUrl}${productForm.imageUrl}` : productForm.imageUrl}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                            ) : <span style={{ fontSize: 36 }}>🛒</span>}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <label style={{ display: 'inline-block', padding: '8px 16px', borderRadius: 10, background: 'rgba(212,140,28,0.1)', color: 'var(--orange)', fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, border: '1px solid rgba(212,140,28,0.25)', cursor: productImageUploading ? 'wait' : 'pointer' }}>
+                              {productImageUploading ? '⏳ جاري الرفع...' : '📷 رفع صورة'}
+                              <input type="file" accept="image/*" style={{ display: 'none' }} disabled={productImageUploading}
+                                onChange={e => { const f = e.target.files?.[0]; if (f) uploadProductImage(f); }} />
+                            </label>
+                            {productForm.imageUrl && (
+                              <button onClick={() => setProductForm(prev => ({ ...prev, imageUrl: '' }))}
+                                style={{ padding: '6px 12px', borderRadius: 8, background: 'rgba(220,38,38,0.07)', color: '#dc2626', fontFamily: 'Cairo', fontSize: 12, border: '1px solid rgba(220,38,38,0.15)', cursor: 'pointer' }}>
+                                🗑 حذف الصورة
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Row: Merchant + Category */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <div>
+                          <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 6 }}>المتجر *</label>
+                          <select value={productForm.merchantId} onChange={e => setProductForm(prev => ({ ...prev, merchantId: e.target.value }))}
+                            style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)' }}>
+                            <option value="">اختر متجراً</option>
+                            {merchants.map(m => <option key={m.id} value={m.id}>{m.storeName}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 6 }}>التصنيف</label>
+                          <select value={productForm.categoryId} onChange={e => setProductForm(prev => ({ ...prev, categoryId: e.target.value }))}
+                            style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)' }}>
+                            <option value="">بدون تصنيف</option>
+                            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Name */}
+                      <div>
+                        <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 6 }}>اسم المنتج *</label>
+                        <input type="text" value={productForm.name} onChange={e => setProductForm(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="مثال: عسل سدر يمني فاخر"
+                          style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, direction: 'rtl', background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }} />
+                      </div>
+
+                      {/* Description */}
+                      <div>
+                        <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 6 }}>الوصف</label>
+                        <textarea value={productForm.description} onChange={e => setProductForm(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="وصف تفصيلي للمنتج..." rows={3}
+                          style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, direction: 'rtl', background: 'var(--paper)', color: 'var(--brown)', resize: 'vertical', boxSizing: 'border-box' }} />
+                      </div>
+
+                      {/* Row: Price + Old Price */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <div>
+                          <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 6 }}>السعر (ج.م) *</label>
+                          <input type="number" min="0" step="0.01" value={productForm.price} onChange={e => setProductForm(prev => ({ ...prev, price: e.target.value }))}
+                            placeholder="0.00"
+                            style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }} />
+                        </div>
+                        <div>
+                          <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 6 }}>السعر القديم (اختياري)</label>
+                          <input type="number" min="0" step="0.01" value={productForm.oldPrice} onChange={e => setProductForm(prev => ({ ...prev, oldPrice: e.target.value }))}
+                            placeholder="0.00 (للتخفيضات)"
+                            style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }} />
+                        </div>
+                      </div>
+
+                      {/* Row: Stock + Weight + Status */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                        <div>
+                          <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 6 }}>المخزون</label>
+                          <input type="number" min="0" value={productForm.stock} onChange={e => setProductForm(prev => ({ ...prev, stock: e.target.value }))}
+                            style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }} />
+                        </div>
+                        <div>
+                          <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 6 }}>الوزن / الحجم</label>
+                          <input type="text" value={productForm.weight} onChange={e => setProductForm(prev => ({ ...prev, weight: e.target.value }))}
+                            placeholder="مثال: 500 جرام"
+                            style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, direction: 'rtl', background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }} />
+                        </div>
+                        <div>
+                          <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 6 }}>الحالة</label>
+                          <select value={productForm.status} onChange={e => setProductForm(prev => ({ ...prev, status: e.target.value }))}
+                            style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)' }}>
+                            <option value="ACTIVE">نشط ✅</option>
+                            <option value="BLOCKED">موقوف 🚫</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Admin launch stats */}
+                      <div style={{ background: 'rgba(212,140,28,0.06)', borderRadius: 12, padding: '14px 16px', border: '1px solid rgba(212,140,28,0.15)' }}>
+                        <div style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          📊 إحصائيات العرض (للإطلاق)
+                          <span style={{ fontFamily: 'Cairo', fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>— أرقام تُعرض للعميل فقط، بدون تقييمات حقيقية</span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                          <div>
+                            <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>⭐ التقييم (0–5)</label>
+                            <input type="number" min="0" max="5" step="0.1" value={productForm.displayRating}
+                              onChange={e => setProductForm(prev => ({ ...prev, displayRating: e.target.value }))}
+                              placeholder="مثال: 4.8"
+                              style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.12)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }} />
+                          </div>
+                          <div>
+                            <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>💬 عدد التقييمات</label>
+                            <input type="number" min="0" value={productForm.displayReviewCount}
+                              onChange={e => setProductForm(prev => ({ ...prev, displayReviewCount: e.target.value }))}
+                              placeholder="مثال: 234"
+                              style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.12)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }} />
+                          </div>
+                          <div>
+                            <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>🛍 المبيعات</label>
+                            <input type="number" min="0" value={productForm.displaySalesCount}
+                              onChange={e => setProductForm(prev => ({ ...prev, displaySalesCount: e.target.value }))}
+                              placeholder="مثال: 1200"
+                              style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.12)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4 }}>
+                        <button onClick={() => { setShowCreateProduct(false); setEditingProduct(null); }}
+                          style={{ padding: '10px 22px', borderRadius: 12, background: 'rgba(71,39,21,0.07)', color: 'var(--brown)', fontFamily: 'Cairo', fontWeight: 700, fontSize: 14, border: '1px solid rgba(71,39,21,0.12)', cursor: 'pointer' }}>
+                          إلغاء
+                        </button>
+                        <button onClick={saveProduct} disabled={productSaving}
+                          style={{ padding: '10px 28px', borderRadius: 12, background: productSaving ? '#ccc' : 'linear-gradient(135deg,var(--orange),var(--gold))', color: '#fff', fontFamily: 'Cairo', fontWeight: 700, fontSize: 14, border: 'none', cursor: productSaving ? 'wait' : 'pointer', boxShadow: productSaving ? 'none' : '0 2px 8px rgba(212,140,28,0.35)' }}>
+                          {productSaving ? '⏳ جاري الحفظ...' : editingProduct ? '💾 حفظ التعديلات' : '✅ إنشاء المنتج'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
