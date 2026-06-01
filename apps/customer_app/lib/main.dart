@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show HttpException, SocketException;
 import 'dart:ui';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -66,11 +67,34 @@ void main() {
 
     await Firebase.initializeApp();
 
+    // Returns true when the error originates from a network/image load
+    // operation — these are handled silently via errorBuilder widgets and
+    // must NOT be recorded as fatal crashes in Crashlytics.
+    bool isImageOrNetworkError(Object exception) {
+      if (exception is NetworkImageLoadException) return true;
+      if (exception is HttpException)             return true;
+      if (exception is SocketException)           return true;
+      final msg = exception.toString().toLowerCase();
+      return msg.contains('image resource service') ||
+             msg.contains('failed to load network image') ||
+             msg.contains('invalid image data') ||
+             msg.contains('http request failed');
+    }
+
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
       if (kDebugMode) {
         debugPrint(details.exceptionAsString());
         debugPrintStack(stackTrace: details.stack);
+      }
+      // Image / network loading failures: show placeholder, skip fatal report.
+      if (isImageOrNetworkError(details.exception)) {
+        FirebaseCrashlytics.instance.recordError(
+          details.exception, details.stack,
+          reason: 'image-load-error (non-fatal)',
+          fatal: false,
+        );
+        return;
       }
       FirebaseCrashlytics.instance.recordFlutterFatalError(details);
     };
@@ -79,7 +103,9 @@ void main() {
         debugPrint(error.toString());
         debugPrintStack(stackTrace: stack);
       }
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      // Image / network loading failures are non-fatal.
+      final fatal = !isImageOrNetworkError(error);
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: fatal);
       return true;
     };
 

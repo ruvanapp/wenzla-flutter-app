@@ -387,8 +387,11 @@ export default function AdminClient() {
   const [homeSections, setHomeSections] = useState<HomeSection[]>([]);
   const [cmsLoading, setCmsLoading] = useState(false);
   const [cmsMessage, setCmsMessage] = useState('');
-  const [bannerForm, setBannerForm] = useState({ id: '', title: '', subtitle: '', buttonText: '', color1: '#D4A437', color2: '#8B4513', enabled: true });
+  const [bannerForm, setBannerForm] = useState({ id: '', title: '', subtitle: '', buttonText: '', color1: '#D4A437', color2: '#8B4513', enabled: true, imageUrl: '', sortOrder: 0 });
   const [editingBannerId, setEditingBannerId] = useState<string | null>(null);
+  const [bannerImageUploading, setBannerImageUploading] = useState(false);
+  const [bannerImagePreview, setBannerImagePreview] = useState('');
+  const [draggingBanner, setDraggingBanner] = useState<string | null>(null);
   const [promoForm, setPromoForm] = useState({ id: '', title: '', subtitle: '', targetUrl: '', enabled: true, startsAt: '', endsAt: '' });
   const [editingPromoId, setEditingPromoId] = useState<string | null>(null);
 
@@ -1078,28 +1081,89 @@ export default function AdminClient() {
   async function saveBanner() {
     if (!bannerForm.title.trim()) { setCmsMessage('العنوان مطلوب'); return; }
     try {
+      const body = {
+        title: bannerForm.title.trim(),
+        subtitle: bannerForm.subtitle.trim() || null,
+        buttonText: bannerForm.buttonText.trim() || null,
+        imageUrl: bannerForm.imageUrl || null,
+        color1: bannerForm.color1,
+        color2: bannerForm.color2,
+        enabled: bannerForm.enabled,
+        sortOrder: bannerForm.sortOrder,
+      };
       if (editingBannerId) {
-        await api(`/home-cms/banners/${editingBannerId}`, { method: 'PATCH', body: JSON.stringify(bannerForm) });
+        await api(`/home-cms/banners/${editingBannerId}`, { method: 'PATCH', body: JSON.stringify(body) });
         setCmsMessage('تم تحديث البانر بنجاح');
       } else {
-        await api('/home-cms/banners', { method: 'POST', body: JSON.stringify(bannerForm) });
+        await api('/home-cms/banners', { method: 'POST', body: JSON.stringify(body) });
         setCmsMessage('تم إضافة البانر بنجاح');
       }
-      setBannerForm({ id: '', title: '', subtitle: '', buttonText: '', color1: '#D4A437', color2: '#8B4513', enabled: true });
+      setBannerForm({ id: '', title: '', subtitle: '', buttonText: '', color1: '#D4A437', color2: '#8B4513', enabled: true, imageUrl: '', sortOrder: 0 });
       setEditingBannerId(null);
+      setBannerImagePreview('');
       loadCmsData();
     } catch (e) { setCmsMessage(String(e)); }
   }
 
   async function deleteBanner(id: string) {
-    if (!confirm('هل تريد حذف هذا البانر؟')) return;
-    await api(`/home-cms/banners/${id}`, { method: 'DELETE' });
-    loadCmsData();
+    if (!confirm('هل تريد حذف هذا البانر نهائياً؟ لا يمكن التراجع.')) return;
+    try {
+      await api(`/home-cms/banners/${id}`, { method: 'DELETE' });
+      setCmsMessage('تم حذف البانر');
+      loadCmsData();
+    } catch (e) { setCmsMessage('فشل الحذف: ' + String(e)); }
   }
 
   async function toggleBanner(b: HomeBanner) {
-    await api(`/home-cms/banners/${b.id}`, { method: 'PATCH', body: JSON.stringify({ enabled: !b.enabled }) });
-    loadCmsData();
+    try {
+      await api(`/home-cms/banners/${b.id}`, { method: 'PATCH', body: JSON.stringify({ enabled: !b.enabled }) });
+      setCmsMessage(b.enabled ? 'تم إيقاف البانر' : 'تم تفعيل البانر');
+      loadCmsData();
+    } catch (e) { setCmsMessage(String(e)); }
+  }
+
+  async function uploadBannerImage(id: string, file: File) {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) { setCmsMessage('مسموح فقط بـ JPG / PNG / WebP'); return; }
+    if (file.size > 8 * 1024 * 1024) { setCmsMessage('الملف كبير جداً — الحد الأقصى 8 ميجا'); return; }
+    setBannerImageUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      const res = await fetch(`${apiUrl}/home-cms/banners/${id}/image`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'فشل الرفع');
+      setBannerForm(prev => ({ ...prev, imageUrl: data.imageUrl }));
+      setBannerImagePreview(data.imageUrl);
+      setCmsMessage('تم رفع الصورة بنجاح');
+      loadCmsData();
+    } catch (e) { setCmsMessage('فشل رفع الصورة: ' + String(e)); }
+    finally { setBannerImageUploading(false); }
+  }
+
+  async function reorderBanners(newOrder: HomeBanner[]) {
+    try {
+      const ids = newOrder.map(b => b.id);
+      await api('/home-cms/banners/reorder', { method: 'PUT', body: JSON.stringify({ ids }) });
+      setHomeBanners(newOrder);
+      setCmsMessage('تم تحديث الترتيب');
+    } catch (e) { setCmsMessage(String(e)); }
+  }
+
+  function moveBannerUp(index: number) {
+    if (index <= 0) return;
+    const arr = [...homeBanners];
+    [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
+    reorderBanners(arr);
+  }
+
+  function moveBannerDown(index: number) {
+    if (index >= homeBanners.length - 1) return;
+    const arr = [...homeBanners];
+    [arr[index], arr[index + 1]] = [arr[index + 1], arr[index]];
+    reorderBanners(arr);
   }
 
   async function savePromotion() {
@@ -1132,16 +1196,6 @@ export default function AdminClient() {
   async function toggleSection(s: HomeSection) {
     await api(`/home-cms/sections/${s.key}`, { method: 'PUT', body: JSON.stringify({ enabled: !s.enabled, title: s.title, subtitle: s.subtitle, sortOrder: s.sortOrder }) });
     loadCmsData();
-  }
-
-  async function uploadBannerImage(id: string, file: File) {
-    const fd = new FormData();
-    fd.append('image', file);
-    const res = await fetch(`${apiUrl}/home-cms/banners/${id}/image`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
-    });
-    if (res.ok) { setCmsMessage('تم رفع الصورة بنجاح'); loadCmsData(); }
-    else setCmsMessage('فشل رفع الصورة');
   }
 
   async function uploadPromoImage(id: string, file: File) {
@@ -2269,6 +2323,7 @@ export default function AdminClient() {
               {/* Banners */}
               {!cmsLoading && cmsTab === 'banners' && (
                 <div>
+                  {/* ── Form Card ──────────────────────────────── */}
                   <div style={{ background: 'var(--cream)', borderRadius: 16, padding: 20, marginBottom: 20, border: '1px solid var(--border)' }}>
                     <h3 style={{ fontFamily: 'Cairo', margin: '0 0 16px', fontSize: 16, color: 'var(--brown)' }}>
                       {editingBannerId ? '✏️ تعديل البانر' : '➕ إضافة بانر جديد'}
@@ -2306,35 +2361,92 @@ export default function AdminClient() {
                         </label>
                       </div>
                     </div>
+                    {/* Image preview + upload */}
+                    {(bannerImagePreview || bannerForm.imageUrl) && (
+                      <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <img src={bannerImagePreview || bannerForm.imageUrl} alt="" style={{ width: 120, height: 72, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--border)' }} />
+                        <span style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }}>معاينة الصورة</span>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
                       <button className="action-btn" onClick={saveBanner}>{editingBannerId ? '💾 حفظ التعديلات' : '➕ إضافة'}</button>
                       {editingBannerId && (
-                        <button className="action-btn" onClick={() => { setEditingBannerId(null); setBannerForm({ id: '', title: '', subtitle: '', buttonText: '', color1: '#D4A437', color2: '#8B4513', enabled: true }); }}>
+                        <button className="action-btn" onClick={() => { setEditingBannerId(null); setBannerForm({ id: '', title: '', subtitle: '', buttonText: '', color1: '#D4A437', color2: '#8B4513', enabled: true, imageUrl: '', sortOrder: 0 }); setBannerImagePreview(''); }}>
                           ✕ إلغاء
                         </button>
                       )}
                     </div>
                   </div>
 
+                  {/* ── Banner Cards ───────────────────────────── */}
                   {homeBanners.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontFamily: 'Cairo' }}>لا توجد بانرات حتى الآن — أضف أول بانر أعلاه</div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {homeBanners.map(b => (
-                        <div key={b.id} style={{ display: 'flex', gap: 16, alignItems: 'center', background: 'var(--cream)', borderRadius: 14, padding: '12px 16px', border: '1px solid var(--border)', opacity: b.enabled ? 1 : 0.5 }}>
-                          <div style={{ width: 56, height: 40, borderRadius: 10, flexShrink: 0, background: `linear-gradient(135deg, ${b.color1}, ${b.color2})` }} />
-                          {b.imageUrl && <img src={b.imageUrl} alt="" style={{ width: 56, height: 40, objectFit: 'cover', borderRadius: 10 }} />}
-                          <div style={{ flex: 1, direction: 'rtl' }}>
-                            <strong style={{ fontFamily: 'Cairo' }}>{b.title}</strong>
-                            {b.subtitle && <div style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'Cairo' }}>{b.subtitle}</div>}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+                      {homeBanners.map((b, idx) => (
+                        <div key={b.id} style={{ background: 'var(--cream)', borderRadius: 16, overflow: 'hidden', border: `2px solid ${b.enabled ? 'var(--orange)' : 'var(--border)'}`, opacity: b.enabled ? 1 : 0.55, transition: 'opacity 0.2s' }}>
+                          {/* Preview image */}
+                          <div style={{ height: 140, background: b.imageUrl ? undefined : `linear-gradient(135deg, ${b.color1}, ${b.color2})`, position: 'relative' }}>
+                            {b.imageUrl ? (
+                              <img src={b.imageUrl} alt={b.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: 'Cairo', fontWeight: 700, fontSize: 18, textShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
+                                {b.title}
+                              </div>
+                            )}
+                            {/* Status badge */}
+                            <span style={{ position: 'absolute', top: 8, right: 8, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontFamily: 'Cairo', fontWeight: 700,
+                              background: b.enabled ? '#dcfce7' : '#fee2e2',
+                              color: b.enabled ? '#16a34a' : '#dc2626',
+                              border: `1px solid ${b.enabled ? '#16a34a' : '#dc2626'}` }}>
+                              {b.enabled ? 'نشط' : 'معطل'}
+                            </span>
+                            {/* Order badge */}
+                            <span style={{ position: 'absolute', top: 8, left: 8, width: 26, height: 26, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
+                              {idx + 1}
+                            </span>
                           </div>
-                          <div style={{ display: 'flex', gap: 6 }}>
+                          {/* Info */}
+                          <div style={{ padding: '12px 14px', direction: 'rtl' }}>
+                            <div style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 14, color: 'var(--brown)' }}>{b.title}</div>
+                            {b.subtitle && <div style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{b.subtitle}</div>}
+                            {b.buttonText && <div style={{ fontFamily: 'Cairo', fontSize: 11, color: 'var(--orange)', marginTop: 4 }}>🖱 {b.buttonText}</div>}
+                          </div>
+                          {/* Actions */}
+                          <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', display: 'flex', gap: 6, direction: 'rtl', flexWrap: 'wrap' }}>
                             <button className="icon-btn" title="رفع صورة"
-                              onClick={() => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.onchange = ev => { const f = (ev.target as HTMLInputElement).files?.[0]; if (f) uploadBannerImage(b.id, f); }; inp.click(); }}>📷</button>
+                              onClick={() => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.jpg,.jpeg,.png,.webp'; inp.onchange = ev => { const f = (ev.target as HTMLInputElement).files?.[0]; if (f) uploadBannerImage(b.id, f); }; inp.click(); }}>
+                              📷
+                            </button>
                             <button className="icon-btn" title="تعديل"
-                              onClick={() => { setEditingBannerId(b.id); setBannerForm({ id: b.id, title: b.title, subtitle: b.subtitle ?? '', buttonText: b.buttonText ?? '', color1: b.color1, color2: b.color2, enabled: b.enabled }); }}>✏️</button>
-                            <button className="icon-btn" onClick={() => toggleBanner(b)}>{b.enabled ? '👁' : '🚫'}</button>
-                            <button className="icon-btn" onClick={() => deleteBanner(b.id)} style={{ color: '#dc2626' }}>🗑</button>
+                              onClick={() => { setEditingBannerId(b.id); setBannerForm({ id: b.id, title: b.title, subtitle: b.subtitle ?? '', buttonText: b.buttonText ?? '', color1: b.color1, color2: b.color2, enabled: b.enabled, imageUrl: b.imageUrl ?? '', sortOrder: b.sortOrder }); setBannerImagePreview(b.imageUrl ?? ''); }}>
+                              ✏️
+                            </button>
+                            <button className="icon-btn" title="معاينة"
+                              onClick={() => window.open(b.imageUrl || '#', '_blank')}>
+                              👁
+                            </button>
+                            <button className="icon-btn" title="أعلى"
+                              disabled={idx === 0}
+                              onClick={() => moveBannerUp(idx)}
+                              style={{ opacity: idx === 0 ? 0.3 : 1, cursor: idx === 0 ? 'not-allowed' : 'pointer' }}>
+                              ⬆️
+                            </button>
+                            <button className="icon-btn" title="أسفل"
+                              disabled={idx === homeBanners.length - 1}
+                              onClick={() => moveBannerDown(idx)}
+                              style={{ opacity: idx === homeBanners.length - 1 ? 0.3 : 1, cursor: idx === homeBanners.length - 1 ? 'not-allowed' : 'pointer' }}>
+                              ⬇️
+                            </button>
+                            <button className="icon-btn" title={b.enabled ? 'إيقاف' : 'تفعيل'}
+                              onClick={() => toggleBanner(b)}>
+                              {b.enabled ? '🚫' : '✅'}
+                            </button>
+                            <button className="icon-btn" title="حذف"
+                              onClick={() => deleteBanner(b.id)}
+                              style={{ color: '#dc2626', marginRight: 'auto' }}>
+                              🗑
+                            </button>
                           </div>
                         </div>
                       ))}
