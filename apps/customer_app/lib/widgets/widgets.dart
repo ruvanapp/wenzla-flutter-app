@@ -527,24 +527,22 @@ class NetImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget img;
-    if (url != null && url!.startsWith('http')) {
-      // cacheWidth/cacheHeight decode image at display size → reduces memory 4-8×
-      final cw = width  != null ? (width!  * 2).toInt() : null;
-      final ch = height != null ? (height! * 2).toInt() : null;
-      img = Image.network(
-        url!,
-        width: width, height: height, fit: fit,
-        cacheWidth:  cw,
-        cacheHeight: ch,
-        errorBuilder: (_, __, ___) => _placeholder(),
-        loadingBuilder: (_, child, prog) =>
-            prog == null ? child : _shimmer(),
-      );
-    } else {
-      img = _placeholder();
+    final safeUrl = url?.trim();
+    if (safeUrl == null || safeUrl.isEmpty || !safeUrl.startsWith('http')) {
+      return _placeholder();
     }
-
+    // cacheWidth/cacheHeight decode image at display size → reduces memory 4-8×
+    final cw = width  != null ? (width!  * 2).toInt() : null;
+    final ch = height != null ? (height! * 2).toInt() : null;
+    Widget img = Image.network(
+      safeUrl,
+      width: width, height: height, fit: fit,
+      cacheWidth:  cw,
+      cacheHeight: ch,
+      errorBuilder: (_, __, ___) => _placeholder(),
+      loadingBuilder: (_, child, prog) =>
+          prog == null ? child : _shimmer(),
+    );
     if (borderRadius != null) {
       img = ClipRRect(borderRadius: borderRadius!, child: img);
     }

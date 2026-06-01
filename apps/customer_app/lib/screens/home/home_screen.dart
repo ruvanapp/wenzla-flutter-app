@@ -166,8 +166,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Hero Banner ─────────────────────────────────────────────────────────────
   /// Resolve a relative imageUrl from the CMS backend to a full URL.
-  static String _resolveImgUrl(String url) =>
-      url.startsWith('http') ? url : '$kApiUrl$url';
+  /// Returns null for empty/invalid URLs so callers can skip Image.network.
+  static String? _resolveImgUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return null;
+    return url.startsWith('http') ? url : '$kApiUrl$url';
+  }
 
   Widget _buildHeroBanner() {
     return Consumer<AppState>(builder: (_, st, __) {
@@ -257,9 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final title    = (b['title'] as String?) ?? '';
     final subtitle = (b['subtitle'] as String?) ?? '';
     final btnText  = (b['buttonText'] as String?) ?? 'تسوق الآن';
-    final imageUrl = (b['imageUrl'] as String?) != null
-        ? _resolveImgUrl(b['imageUrl'] as String)
-        : null;
+    final imageUrl = _resolveImgUrl(b['imageUrl'] as String?);
     Color c1, c2;
     try {
       c1 = Color(int.parse((b['color1'] as String).replaceFirst('#', '0xFF')));
@@ -557,11 +558,12 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       bgColor = kAmber;
     }
-    final imageWidget = imageUrl != null && imageUrl.isNotEmpty
+    final resolved = _resolveImgUrl(imageUrl);
+    final imageWidget = resolved != null
         ? ClipRRect(
             borderRadius: BorderRadius.circular(18),
             child: Image.network(
-              _resolveImgUrl(imageUrl), fit: BoxFit.cover, width: 62, height: 62,
+              resolved, fit: BoxFit.cover, width: 62, height: 62,
               errorBuilder: (_, __, ___) =>
                   Center(child: Text(emoji, style: const TextStyle(fontSize: 26))),
             ),
@@ -830,9 +832,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final p = st.homePromotions.first as Map<String, dynamic>;
         final title    = (p['title'] as String?) ?? '';
         final subtitle = (p['subtitle'] as String?) ?? '';
-        final imageUrl = (p['imageUrl'] as String?) != null
-            ? _resolveImgUrl(p['imageUrl'] as String)
-            : null;
+        final imageUrl = _resolveImgUrl(p['imageUrl'] as String?);
         return Container(
           margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           decoration: BoxDecoration(
