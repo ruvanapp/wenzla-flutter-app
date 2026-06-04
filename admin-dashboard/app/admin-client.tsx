@@ -1017,17 +1017,25 @@ export default function AdminClient() {
     } catch { /* silent */ }
   }
 
+  // Guard against double-submit: ref is synchronous, unlike state which
+  // batches — this ensures even rapid successive calls fire only once.
+  const notifSendingRef = useRef(false);
   async function sendNotification() {
+    if (notifSendingRef.current) return; // prevent double-click race
     if (!notifTitle.trim() || !notifBody.trim()) { setNotifMessage('العنوان والمحتوى مطلوبان'); return; }
+    notifSendingRef.current = true;
     setNotifLoading(true);
     try {
       const endpoint = notifTarget === 'customers' ? '/admin/notifications/customers' : '/admin/notifications/merchants';
       await api(endpoint, { method: 'POST', body: JSON.stringify({ title: notifTitle, message: notifBody }) });
-      setNotifMessage('تم إرسال الإشعار بنجاح');
+      setNotifMessage('تم إرسال الإشعار بنجاح ✓');
       setNotifTitle(''); setNotifBody('');
       loadNotifHistory();
     } catch (e) { setNotifMessage(String(e)); }
-    finally { setNotifLoading(false); }
+    finally {
+      setNotifLoading(false);
+      notifSendingRef.current = false;
+    }
   }
 
   // ── User ban/unban ────────────────────────────────────────────────────────────
