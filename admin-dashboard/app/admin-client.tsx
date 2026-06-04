@@ -342,6 +342,7 @@ export default function AdminClient() {
   });
   const [productImageUploading, setProductImageUploading] = useState(false);
   const [productSaving, setProductSaving] = useState(false);
+  const [productActionLoadingId, setProductActionLoadingId] = useState<string | null>(null);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [commissionPercentage, setCommissionPercentage] = useState('10');
@@ -408,6 +409,7 @@ export default function AdminClient() {
   const [orderStats, setOrderStats] = useState<OrderStats>({ totalToday: 0, pending: 0, completed: 0, cancelled: 0, totalSalesAmount: 0 });
   const [selectedOrder, setSelectedOrder] = useState<FullOrder | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [orderStatusUpdating, setOrderStatusUpdating] = useState(false);
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set());
 
   // ── Analytics state ───────────────────────────────────────────────────────────
@@ -451,8 +453,6 @@ export default function AdminClient() {
   // ── Init ──────────────────────────────────────────────────────────────────────
   useEffect(() => {
     setMounted(true);
-    setIdentifier('admin');
-    setPassword('.Moha13579#');
   }, []);
 
   useEffect(() => {
@@ -699,8 +699,14 @@ export default function AdminClient() {
   }
 
   async function updateProduct(id: string, status: string) {
-    await api(`/admin/products/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
-    await refreshAll();
+    const label = status === 'ACTIVE' ? 'تفعيل' : 'إيقاف';
+    if (!window.confirm(`تأكيد ${label} هذا المنتج؟`)) return;
+    setProductActionLoadingId(id);
+    try {
+      await api(`/admin/products/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      await refreshAll();
+    } catch (e) { toast.error('فشل تغيير الحالة: ' + String(e)); }
+    finally { setProductActionLoadingId(null); }
   }
 
   function openCreateProduct() {
@@ -782,21 +788,25 @@ export default function AdminClient() {
 
   async function deleteProduct(id: string) {
     if (!confirm('هل تريد حذف هذا المنتج نهائياً؟')) return;
+    setProductActionLoadingId(id);
     try {
       await api(`/admin/products/${id}`, { method: 'DELETE' });
       toast.success('تم حذف المنتج');
       await refreshAll();
     } catch (e) { toast.error('فشل الحذف: ' + String(e)); }
+    finally { setProductActionLoadingId(null); }
   }
 
 
   async function updateOrderStatus(id: string, status: string) {
+    setOrderStatusUpdating(true);
     try {
       await api(`/admin/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
       setFullOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
       setSelectedOrder(prev => prev?.id === id ? { ...prev, status } : prev);
       fetchOrderStats();
     } catch (err) { setMessage(String(err)); }
+    finally { setOrderStatusUpdating(false); }
   }
 
   async function saveCommission() {
@@ -1322,6 +1332,14 @@ export default function AdminClient() {
         </div>
       </aside>
 
+      {/* Mobile overlay — tap outside to close sidebar */}
+      {sidebarOpen && (
+        <div
+          className="sb-overlay"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* ── Main area ── */}
       <div className="dash-main">
 
@@ -1331,7 +1349,6 @@ export default function AdminClient() {
             <button
               className="topbar-btn"
               onClick={() => setSidebarOpen(o => !o)}
-              style={{ display: 'none' }}
               id="sb-toggle"
             >
               ☰
@@ -2034,14 +2051,23 @@ export default function AdminClient() {
                           style={{ flex: 1, padding: '7px 0', borderRadius: 10, background: 'rgba(212,140,28,0.12)', color: 'var(--orange)', fontFamily: 'Cairo', fontWeight: 700, fontSize: 12, border: '1px solid rgba(212,140,28,0.25)', cursor: 'pointer' }}>
                           ✏️ تعديل
                         </button>
-                        <button onClick={() => updateProduct(product.id, product.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE')}
-                          style={{ flex: 1, padding: '7px 0', borderRadius: 10, background: product.status === 'ACTIVE' ? 'rgba(220,38,38,0.08)' : 'rgba(22,163,74,0.08)',
+                        <button
+                          onClick={() => updateProduct(product.id, product.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE')}
+                          disabled={productActionLoadingId === product.id}
+                          style={{ flex: 1, padding: '7px 0', borderRadius: 10,
+                            background: product.status === 'ACTIVE' ? 'rgba(220,38,38,0.08)' : 'rgba(22,163,74,0.08)',
                             color: product.status === 'ACTIVE' ? '#dc2626' : '#16a34a', fontFamily: 'Cairo', fontWeight: 700, fontSize: 12,
-                            border: `1px solid ${product.status === 'ACTIVE' ? 'rgba(220,38,38,0.2)' : 'rgba(22,163,74,0.2)'}`, cursor: 'pointer' }}>
-                          {product.status === 'ACTIVE' ? '🚫 إيقاف' : '✅ تفعيل'}
+                            border: `1px solid ${product.status === 'ACTIVE' ? 'rgba(220,38,38,0.2)' : 'rgba(22,163,74,0.2)'}`,
+                            cursor: productActionLoadingId === product.id ? 'wait' : 'pointer',
+                            opacity: productActionLoadingId === product.id ? 0.55 : 1 }}>
+                          {productActionLoadingId === product.id ? '⏳' : (product.status === 'ACTIVE' ? '🚫 إيقاف' : '✅ تفعيل')}
                         </button>
-                        <button onClick={() => deleteProduct(product.id)}
-                          style={{ padding: '7px 12px', borderRadius: 10, background: 'rgba(220,38,38,0.07)', color: '#dc2626', fontFamily: 'Cairo', fontSize: 12, border: '1px solid rgba(220,38,38,0.15)', cursor: 'pointer' }}>
+                        <button
+                          onClick={() => deleteProduct(product.id)}
+                          disabled={productActionLoadingId === product.id}
+                          style={{ padding: '7px 12px', borderRadius: 10, background: 'rgba(220,38,38,0.07)', color: '#dc2626', fontFamily: 'Cairo', fontSize: 12, border: '1px solid rgba(220,38,38,0.15)',
+                            cursor: productActionLoadingId === product.id ? 'wait' : 'pointer',
+                            opacity: productActionLoadingId === product.id ? 0.55 : 1 }}>
                           🗑
                         </button>
                       </div>
@@ -2152,7 +2178,7 @@ export default function AdminClient() {
                       </div>
 
                       {/* Row: Stock + Weight + Status */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
                         <div>
                           <label style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--brown)', display: 'block', marginBottom: 6 }}>المخزون</label>
                           <input type="number" min="0" value={productForm.stock} onChange={e => setProductForm(prev => ({ ...prev, stock: e.target.value }))}
@@ -2180,7 +2206,7 @@ export default function AdminClient() {
                           📊 إحصائيات العرض (للإطلاق)
                           <span style={{ fontFamily: 'Cairo', fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>— أرقام تُعرض للعميل فقط، بدون تقييمات حقيقية</span>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
                           <div>
                             <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>⭐ التقييم (0–5)</label>
                             <input type="number" min="0" max="5" step="0.1" value={productForm.displayRating}
@@ -2823,7 +2849,8 @@ export default function AdminClient() {
 
               <div className="list-panel">
                 <div className="lp-head"><h3>قائمة الطلبات</h3></div>
-                <div className="lp-body">
+                <div className="lp-body" style={{ overflowX: 'auto' }}>
+                  <div style={{ minWidth: 680 }}>
                   {walletRechargeRequests.map((request) => {
                     const screenshotUrl = request.screenshotUrl?.startsWith('http')
                       ? request.screenshotUrl
@@ -2924,6 +2951,7 @@ export default function AdminClient() {
                       </div>
                     );
                   })}
+                  </div>
                   {walletRechargeRequests.length === 0 && (
                     <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>
                       لا توجد طلبات شحن محفظة حتى الآن
@@ -3451,8 +3479,15 @@ export default function AdminClient() {
                 <span className="status-pill" style={{ background: `${ORDER_STATUS_COLOR[selectedOrder.status]}22`, color: ORDER_STATUS_COLOR[selectedOrder.status], border: `1px solid ${ORDER_STATUS_COLOR[selectedOrder.status]}44` }}>
                   {ORDER_STATUS_AR[selectedOrder.status] ?? selectedOrder.status}
                 </span>
-                <select value={selectedOrder.status} onChange={e => updateOrderStatus(selectedOrder.id, e.target.value)}
-                  style={{ fontSize: 12, padding: '6px 10px', minWidth: 130, borderRadius: 10 }}>
+                <select
+                  value={selectedOrder.status}
+                  disabled={orderStatusUpdating}
+                  onChange={e => {
+                    const newStatus = e.target.value;
+                    if (!window.confirm(`تأكيد تغيير الحالة إلى "${ORDER_STATUS_AR[newStatus] ?? newStatus}"؟`)) return;
+                    updateOrderStatus(selectedOrder.id, newStatus);
+                  }}
+                  style={{ fontSize: 12, padding: '6px 10px', minWidth: 130, borderRadius: 10, opacity: orderStatusUpdating ? 0.6 : 1, cursor: orderStatusUpdating ? 'wait' : 'pointer' }}>
                   {ORDER_STATUSES.map(s => <option key={s} value={s}>{ORDER_STATUS_AR[s] ?? s}</option>)}
                 </select>
                 <button className="close-btn" onClick={() => setSelectedOrder(null)}>✕</button>
