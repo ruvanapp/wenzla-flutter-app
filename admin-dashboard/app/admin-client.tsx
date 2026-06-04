@@ -417,6 +417,9 @@ export default function AdminClient() {
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
   const [topVendors, setTopVendors] = useState<TopVendor[]>([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState('');
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [whatsappSaving, setWhatsappSaving] = useState(false);
 
   // ── Users state ───────────────────────────────────────────────────────────────
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -458,6 +461,14 @@ export default function AdminClient() {
   useEffect(() => {
     loadSupportWhatsapp();
   }, []);
+
+  // Auto-dismiss success messages after 4.5 s
+  useEffect(() => {
+    if (!message) return;
+    if (!/تم |✓|بنجاح/.test(message)) return;
+    const t = setTimeout(() => setMessage(''), 4500);
+    return () => clearTimeout(t);
+  }, [message]);
 
   useEffect(() => {
     if (authorized) refreshAll();
@@ -541,6 +552,7 @@ export default function AdminClient() {
       setCommissionPercentage(String(set.percentage));
       setCategories(cats ?? []);
     } catch { setMessage('خطأ في تحميل البيانات — تحقق من الاتصال'); }
+    finally { setOverviewLoading(false); }
   }
 
   const fetchOrders = useCallback(async (silent = false) => {
@@ -823,13 +835,21 @@ export default function AdminClient() {
   }
 
   async function saveSupportWhatsapp() {
-    await api('/admin/settings/support-whatsapp', {
-      method: 'PUT',
-      body: JSON.stringify({
-        number: supportWhatsappNumber,
-        message: supportWhatsappMessage,
-      }),
-    });
+    setWhatsappSaving(true);
+    try {
+      await api('/admin/settings/support-whatsapp', {
+        method: 'PUT',
+        body: JSON.stringify({
+          number: supportWhatsappNumber,
+          message: supportWhatsappMessage,
+        }),
+      });
+      setMessage('تم حفظ إعدادات واتساب الدعم بنجاح ✓');
+    } catch {
+      setMessage('فشل حفظ الإعدادات — تحقق من الاتصال بالخادم');
+    } finally {
+      setWhatsappSaving(false);
+    }
   }
 
   async function loadWalletRechargeRequests() {
@@ -994,6 +1014,7 @@ export default function AdminClient() {
   // ── Analytics ─────────────────────────────────────────────────────────────────
   async function loadAnalytics() {
     setAnalyticsLoading(true);
+    setAnalyticsError('');
     try {
       const [rev, tp, tv] = await Promise.all([
         api<RevenuePoint[]>('/admin/analytics/revenue'),
@@ -1003,7 +1024,9 @@ export default function AdminClient() {
       setRevenueData(rev ?? []);
       setTopProducts(tp ?? []);
       setTopVendors(tv ?? []);
-    } catch { /* silent */ }
+    } catch {
+      setAnalyticsError('فشل تحميل بيانات التحليلات — تحقق من الاتصال بالخادم');
+    }
     finally { setAnalyticsLoading(false); }
   }
 
@@ -1041,7 +1064,15 @@ export default function AdminClient() {
       setNotifMessage('تم إرسال الإشعار بنجاح ✓');
       setNotifTitle(''); setNotifBody('');
       loadNotifHistory();
-    } catch (e) { setNotifMessage(String(e)); }
+    } catch (e) {
+      const raw = String(e);
+      const msg = /401|403/.test(raw)
+        ? 'غير مصرح — تحقق من صلاحيات المشرف'
+        : /network|fetch|Failed to fetch/i.test(raw)
+            ? 'تعذر الاتصال بالخادم، تحقق من الإنترنت'
+            : 'فشل إرسال الإشعار — ' + raw.split('\n')[0];
+      setNotifMessage(msg);
+    }
     finally {
       setNotifLoading(false);
       notifSendingRef.current = false;
@@ -1245,6 +1276,7 @@ export default function AdminClient() {
   // ── Revenue chart (pure SVG/CSS) ──────────────────────────────────────────────
   function RevenueChart() {
     if (analyticsLoading) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontFamily: 'Cairo' }}>جاري تحميل البيانات…</div>;
+    if (analyticsError) return <div style={{ textAlign: 'center', padding: 32, color: '#dc2626', fontFamily: 'Cairo', fontSize: 13 }}>⚠️ {analyticsError}</div>;
     if (!revenueData.length) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontFamily: 'Cairo' }}>لا توجد بيانات بعد</div>;
     const maxRev = Math.max(...revenueData.map(d => d.revenue), 1);
     const last14 = revenueData.slice(-14);
@@ -1368,12 +1400,19 @@ export default function AdminClient() {
         {/* Content */}
         <div className="dash-content">
 
-          {message && (
-            <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 12, padding: '10px 16px', marginBottom: 16, color: '#92400e', fontFamily: 'Cairo', display: 'flex', justifyContent: 'space-between' }}>
-              {message}
-              <button onClick={() => setMessage('')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
-            </div>
-          )}
+          {message && (() => {
+            const isSuccess = /تم |✓|بنجاح/.test(message);
+            const isError   = /فشل|خطأ/.test(message);
+            const bg     = isSuccess ? '#f0fdf4' : isError ? '#fef2f2' : '#fefce8';
+            const border = isSuccess ? '#86efac' : isError ? '#fca5a5' : '#fbbf24';
+            const color  = isSuccess ? '#166534' : isError ? '#991b1b' : '#92400e';
+            return (
+              <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '10px 16px', marginBottom: 16, color, fontFamily: 'Cairo', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <span>{message}</span>
+                <button onClick={() => setMessage('')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color, lineHeight: 1, flexShrink: 0 }}>✕</button>
+              </div>
+            );
+          })()}
 
           {/* ════════════════════════════════════════════════════════
               OVERVIEW PANEL
@@ -1392,6 +1431,17 @@ export default function AdminClient() {
 
               {/* KPI cards */}
               <div className="analytics-grid">
+                {overviewLoading ? (
+                  [0,1,2,3].map(i => (
+                    <div key={i} className="an-card" style={{ gap: 8 }}>
+                      <div className="shimmer-pulse" style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(71,39,21,0.10)' }} />
+                      <div className="shimmer-pulse" style={{ height: 11, width: '55%', borderRadius: 6, background: 'rgba(71,39,21,0.08)' }} />
+                      <div className="shimmer-pulse" style={{ height: 26, width: '70%', borderRadius: 8, background: 'rgba(71,39,21,0.12)' }} />
+                      <div className="shimmer-pulse" style={{ height: 10, width: '45%', borderRadius: 5, background: 'rgba(71,39,21,0.07)' }} />
+                    </div>
+                  ))
+                ) : (
+                  <>
                 <div className="an-card gold">
                   <div className="an-card-icon">🏪</div>
                   <div className="an-card-label">التجار</div>
@@ -1416,6 +1466,8 @@ export default function AdminClient() {
                   <div className="an-card-value" style={{ fontSize: 18 }}>{formatEGP(overview.sales)}</div>
                   <div className="an-card-delta up">عمولة: {formatEGP(overview.commission)}</div>
                 </div>
+                  </>
+                )}
               </div>
 
               {/* Revenue chart */}
@@ -2743,9 +2795,13 @@ export default function AdminClient() {
                       />
                     </div>
                     <div>
-                      <button className="action-btn" onClick={saveSupportWhatsapp} style={{ background: 'var(--brown)', color: 'var(--cream)', border: 'none' }}>
-                        💾 حفظ إعدادات واتساب الدعم
-                      </button>
+                      <button
+                          className="action-btn"
+                          onClick={saveSupportWhatsapp}
+                          disabled={whatsappSaving}
+                          style={{ background: 'var(--brown)', color: 'var(--cream)', border: 'none', opacity: whatsappSaving ? 0.65 : 1, cursor: whatsappSaving ? 'wait' : 'pointer' }}>
+                          {whatsappSaving ? '⏳ جاري الحفظ…' : '💾 حفظ إعدادات واتساب الدعم'}
+                        </button>
                     </div>
                   </div>
                 </div>
@@ -2813,9 +2869,13 @@ export default function AdminClient() {
                       />
                     </div>
                     <div>
-                      <button className="action-btn" onClick={saveSupportWhatsapp} style={{ background: 'var(--brown)', color: 'var(--cream)', border: 'none' }}>
-                        💾 حفظ إعدادات واتساب الدعم
-                      </button>
+                      <button
+                          className="action-btn"
+                          onClick={saveSupportWhatsapp}
+                          disabled={whatsappSaving}
+                          style={{ background: 'var(--brown)', color: 'var(--cream)', border: 'none', opacity: whatsappSaving ? 0.65 : 1, cursor: whatsappSaving ? 'wait' : 'pointer' }}>
+                          {whatsappSaving ? '⏳ جاري الحفظ…' : '💾 حفظ إعدادات واتساب الدعم'}
+                        </button>
                     </div>
                   </div>
                 </div>
