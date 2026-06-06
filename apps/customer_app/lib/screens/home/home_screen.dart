@@ -76,7 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
           color: kHoney,
           onRefresh: () async {
             final st = context.read<AppState>();
-            await Future.wait([st.loadStores(), st.loadCategories()]);
+            await Future.wait([st.loadStores(), st.loadCategories(), st.loadHomeCms(force: true)]);
           },
           child: CustomScrollView(
             slivers: [
@@ -96,7 +96,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── AppBar ──────────────────────────────────────────────────────────────────
   Widget _buildAppBar(BuildContext context) {
-    final st = context.watch<AppState>();
     return SliverAppBar(
       backgroundColor:    kBackground,
       surfaceTintColor:   Colors.transparent,
@@ -136,24 +135,27 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       actions: [
-        Stack(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.shopping_bag_outlined, color: kTextDark),
-              onPressed: () => context.read<AppState>().showScreen(AppScreen.cart, bottomIndex: 2),
-            ),
-            if (st.cartCount > 0)
-              Positioned(
-                right: 6, top: 6,
-                child: Container(
-                  width: 18, height: 18,
-                  decoration: const BoxDecoration(color: kError, shape: BoxShape.circle),
-                  child: Center(child: Text('${st.cartCount}',
-                    style: const TextStyle(color: Colors.white, fontSize: 10,
-                      fontWeight: FontWeight.w700, fontFamily: 'Cairo'))),
-                ),
+        Selector<AppState, int>(
+          selector: (_, st) => st.cartCount,
+          builder: (ctx, cartCount, __) => Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.shopping_bag_outlined, color: kTextDark),
+                onPressed: () => ctx.read<AppState>().showScreen(AppScreen.cart, bottomIndex: 2),
               ),
-          ],
+              if (cartCount > 0)
+                Positioned(
+                  right: 6, top: 6,
+                  child: Container(
+                    width: 18, height: 18,
+                    decoration: const BoxDecoration(color: kError, shape: BoxShape.circle),
+                    child: Center(child: Text('$cartCount',
+                      style: const TextStyle(color: Colors.white, fontSize: 10,
+                        fontWeight: FontWeight.w700, fontFamily: 'Cairo'))),
+                  ),
+                ),
+            ],
+          ),
         ),
         IconButton(
           icon: const Icon(Icons.search_rounded, color: kTextDark),
@@ -315,9 +317,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 2, 16, 8),
       decoration: BoxDecoration(
-        gradient: imageUrl == null
-            ? LinearGradient(colors: [c1, c2], begin: Alignment.centerRight, end: Alignment.centerLeft)
-            : null,
+        // Always show gradient — visible when image is null or fails to load
+        gradient: LinearGradient(colors: [c1, c2], begin: Alignment.centerRight, end: Alignment.centerLeft),
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           ...kLiftedShadow,
@@ -1074,8 +1075,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final name      = (store['storeName'] as String?) ?? '';
     final logoUrl   = _homeImageUrl(
       store['logoUrl'] as String?,
-      width: 420,
-      height: 220,
+      width: 144,
+      height: 144,
       crop: 'fill',
     );
     final rating    = double.tryParse(store['averageRating']?.toString() ?? '0') ?? 0;

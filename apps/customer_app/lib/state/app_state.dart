@@ -32,6 +32,7 @@ class AppState extends ChangeNotifier {
   // ── Auth ─────────────────────────────────────────────────────────────────────
   String?               _token;
   Map<String, dynamic>? _user;
+  bool                  _checkoutSessionExpired = false;
 
   String?               get token => _token;
   Map<String, dynamic>? get user  => _user;
@@ -90,8 +91,25 @@ class AppState extends ChangeNotifier {
     _token = null;
     _user  = null;
     _orders = [];
+    _checkoutSessionExpired = false;
     await StorageService.clearAuth();
     showScreen(AppScreen.home, bottomIndex: 0);
+  }
+
+  bool consumeCheckoutSessionExpired() {
+    final expired = _checkoutSessionExpired;
+    _checkoutSessionExpired = false;
+    return expired;
+  }
+
+  Future<void> forceLogoutToLogin() async {
+    _token = null;
+    _user = null;
+    _orders = [];
+    _checkingOut = false;
+    _checkoutSessionExpired = false;
+    await StorageService.clearAuth();
+    showScreen(AppScreen.login, bottomIndex: 3);
   }
 
   // ── FCM token — pending-flush pattern ─────────────────────────────────────
@@ -128,11 +146,7 @@ class AppState extends ChangeNotifier {
           ...res,
         };
         await StorageService.saveAuth(_token!, _user ?? {});
-        if (!silent) {
-          notifyListeners();
-        } else {
-          notifyListeners();
-        }
+        if (!silent) notifyListeners();
       }
     } catch (_) {
       // Keep existing cached profile if refresh fails
@@ -209,7 +223,9 @@ class AppState extends ChangeNotifier {
   /// Whether the CMS has featured stores configured
   bool get hasFeaturedStores => _featuredStores.isNotEmpty;
 
-  Future<void> loadHomeCms() async {
+  Future<void> loadHomeCms({bool force = false}) async {
+    // Skip re-fetch if data is already loaded, unless forced (e.g. pull-to-refresh)
+    if (!force && _homeBanners.isNotEmpty) return;
     _cmsLoading = true;
     notifyListeners();
     try {
@@ -497,7 +513,24 @@ class AppState extends ChangeNotifier {
     bool useWallet = false,
     double walletAmount = 0,
   }) async {
-    if (!isLoggedIn || _cart.isEmpty) return false;
+    const traceLabel = 'CHECKOUT';
+    final stopwatch = Stopwatch()..start();
+    int? responseStatusCode;
+    void logResult(bool result, String reason) {
+      debugPrint('[$traceLabel] checkout() returned $result ($reason)');
+      debugPrint(
+        '[$traceLabel] checkout() duration: ${(stopwatch.elapsedMilliseconds / 1000).toStringAsFixed(2)}s',
+      );
+    }
+
+    debugPrint('[$traceLabel] checkout started');
+    debugPrint('[$traceLabel] JWT token exists? ${(_token != null && _token!.isNotEmpty) ? 'yes' : 'no'}');
+    _checkoutSessionExpired = false;
+
+    if (!isLoggedIn || _cart.isEmpty) {
+      logResult(false, 'preflight_failed');
+      return false;
+    }
     _checkingOut = true;
     notifyListeners();
     final api = ApiService(token: _token);
@@ -506,6 +539,7 @@ class AppState extends ChangeNotifier {
     if (merchantId == null) {
       _checkingOut = false;
       notifyListeners();
+      logResult(false, 'missing_merchant_id');
       return false;
     }
     final items = _cart.map((i) => {
@@ -538,8 +572,16 @@ class AppState extends ChangeNotifier {
         'paymentMethod':   paymentMethod,
         if (useWallet && walletAmount > 0) 'walletAmount': walletAmount,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
-      }, auth: true);
+      }, auth: true, traceLabel: traceLabel, onStatusCode: (statusCode) {
+        responseStatusCode = statusCode;
+      });
       _checkingOut = false;
+      if (responseStatusCode == 401 || responseStatusCode == 403) {
+        _checkoutSessionExpired = true;
+        notifyListeners();
+        logResult(false, 'auth_invalid_${responseStatusCode ?? 'unknown'}');
+        return false;
+      }
       if (res is Map && res['id'] != null) {
         _cart = [];
         await _saveCart();
@@ -549,13 +591,22 @@ class AppState extends ChangeNotifier {
           await refreshProfile(silent: true);
         }
         notifyListeners();
+        logResult(true, 'order_created');
         return true;
       }
       notifyListeners();
+      logResult(
+        false,
+        'api_returned_no_order_id${responseStatusCode != null ? '_$responseStatusCode' : ''}',
+      );
       return false;
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[$traceLabel] checkout() threw exception: $e');
+      debugPrintStack(stackTrace: st);
       _checkingOut = false;
+      _checkoutSessionExpired = false;
       notifyListeners();
+      logResult(false, 'exception');
       return false;
     }
   }
