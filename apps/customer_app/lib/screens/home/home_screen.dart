@@ -783,7 +783,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return TapScaleWidget(
-      onTap: () => context.read<AppState>().openStore(store['id'] as String),
+      onTap: () => context.read<AppState>().openStoreWithData(store.cast<String, dynamic>()),
       child: Container(
         width: 176,
         margin: const EdgeInsets.symmetric(horizontal: 7),
@@ -1098,7 +1098,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return TapScaleWidget(
-      onTap: () => context.read<AppState>().openStore(store['id'] as String),
+      onTap: () => context.read<AppState>().openStoreWithData(store.cast<String, dynamic>()),
       child: Container(
         decoration: BoxDecoration(
           color: kSurface,
@@ -1526,7 +1526,7 @@ class _CategoryStoresSheet extends StatelessWidget {
                               Navigator.pop(context);
                               context
                                   .read<AppState>()
-                                  .openStore(s['id'] as String);
+                                  .openStoreWithData(s.cast<String, dynamic>());
                             },
                             child: Container(
                               decoration: BoxDecoration(

@@ -135,7 +135,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
               ),
             )
           : null,
-      body: st.loadingStore
+      body: st.loadingStore && !hasStoreData
           ? const _StoreLoadingState()
           : !hasStoreData
               ? EmptyState(
@@ -404,7 +404,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
 
         // ── 4. Tab content as flat slivers — NO nested scroll ────────────────
         if (_selectedTab == 0)
-          ..._productSlivers(context, products)
+          ..._productSlivers(context, products, st.loadingStore)
         else if (_selectedTab == 1)
           ..._infoSlivers(store)
         else
@@ -418,7 +418,32 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
 
   // ── Tab 0: Products ────────────────────────────────────────────────────────
   List<Widget> _productSlivers(
-      BuildContext context, List<dynamic> products) {
+      BuildContext context, List<dynamic> products, bool loading) {
+    if (products.isEmpty && loading) {
+      // Show shimmer grid skeleton while products are loading
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.all(12),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 0.72,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (_, __) => Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F0E8),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              childCount: 6,
+            ),
+          ),
+        ),
+      ];
+    }
     if (products.isEmpty) {
       return [
         const SliverFillRemaining(
