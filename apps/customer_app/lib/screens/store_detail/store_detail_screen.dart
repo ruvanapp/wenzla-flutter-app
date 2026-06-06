@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -197,8 +198,14 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
               children: [
                 // Cover image or gradient fallback
                 coverUrl != null
-                    ? Image.network(coverUrl, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _heroBg())
+                    ? CachedNetworkImage(
+                        imageUrl: NetImage.optimizeCloudinaryUrl(
+                              coverUrl, width: 1200, height: 440) ??
+                            coverUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => _heroBg(),
+                        errorWidget: (_, __, ___) => _heroBg(),
+                      )
                     : _heroBg(),
                 // Darkening overlay
                 const DecoratedBox(
@@ -229,9 +236,20 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(14),
                           child: logoUrl != null
-                              ? Image.network(logoUrl, fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
-                                      StoreLogoWidget(storeName: name, size: 72))
+                              ? CachedNetworkImage(
+                                  imageUrl: NetImage.optimizeCloudinaryUrl(
+                                        logoUrl, width: 144, height: 144) ??
+                                      logoUrl,
+                                  fit: BoxFit.cover,
+                                  memCacheWidth: 144,
+                                  memCacheHeight: 144,
+                                  maxWidthDiskCache: 144,
+                                  maxHeightDiskCache: 144,
+                                  placeholder: (_, __) =>
+                                      StoreLogoWidget(storeName: name, size: 72),
+                                  errorWidget: (_, __, ___) =>
+                                      StoreLogoWidget(storeName: name, size: 72),
+                                )
                               : StoreLogoWidget(storeName: name, size: 72),
                         ),
                       ),
@@ -745,7 +763,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
               child: ClipRRect(
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(16)),
-                child: NetImage(url: imgUrl, fit: BoxFit.cover),
+                child: NetImage(url: imgUrl, width: 360, height: 260, fit: BoxFit.cover),
               ),
             ),
             // Text section fills remaining card space

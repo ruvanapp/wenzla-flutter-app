@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../state/app_state.dart';
@@ -86,10 +87,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ],
             flexibleSpace: FlexibleSpaceBar(
               background: imgUrl != null && imgUrl.startsWith('http')
-                  ? Image.network(imgUrl, fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => Container(
+                  ? CachedNetworkImage(
+                      imageUrl: NetImage.optimizeCloudinaryUrl(
+                            imgUrl, width: 1200, height: 600) ??
+                          imgUrl,
+                      fit: BoxFit.contain,
+                      placeholder: (_, __) => Container(
                         color: kSurfaceWarm,
-                        child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))))
+                        child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),
+                      errorWidget: (_, __, ___) => Container(
+                        color: kSurfaceWarm,
+                        child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),
+                    )
                   : Container(
                       color: kSurfaceWarm,
                       child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),

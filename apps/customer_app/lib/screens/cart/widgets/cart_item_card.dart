@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../theme/colors.dart';
 import '../../../widgets/widgets.dart';
@@ -60,12 +61,19 @@ class CartItemCard extends StatelessWidget {
               width: 82,
               height: 82,
               child: imageUrl != null && imageUrl.isNotEmpty
-                  ? Image.network(
-                      imageUrl,
+                  ? CachedNetworkImage(
+                      imageUrl: NetImage.optimizeCloudinaryUrl(
+                            imageUrl, width: 164, height: 164) ??
+                          imageUrl,
                       width: 82,
                       height: 82,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _imagePlaceholder(),
+                      memCacheWidth: 164,
+                      memCacheHeight: 164,
+                      maxWidthDiskCache: 164,
+                      maxHeightDiskCache: 164,
+                      placeholder: (_, __) => _imagePlaceholder(),
+                      errorWidget: (_, __, ___) => _imagePlaceholder(),
                     )
                   : _imagePlaceholder(),
             ),

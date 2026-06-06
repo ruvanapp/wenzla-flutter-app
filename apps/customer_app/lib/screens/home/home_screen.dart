@@ -1365,12 +1365,13 @@ class _SearchOverlayState extends State<_SearchOverlay> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: imgUrl != null && imgUrl.isNotEmpty
-                                  ? ClipRRect(
+                                  ? NetImage(
+                                      url: imgUrl,
+                                      width: 44,
+                                      height: 44,
+                                      fit: BoxFit.cover,
                                       borderRadius: BorderRadius.circular(10),
-                                      child: Image.network(imgUrl,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) =>
-                                              const Center(child: Text('🍯'))))
+                                    )
                                   : const Center(
                                       child: Text('🍯',
                                           style: TextStyle(fontSize: 20))),
