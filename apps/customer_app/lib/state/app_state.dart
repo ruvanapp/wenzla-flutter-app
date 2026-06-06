@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/home_cache_service.dart';
 import '../services/storage_service.dart';
 
 enum AppScreen { home, orders, cart, login, storeDetail, productDetail }
@@ -178,14 +179,27 @@ class AppState extends ChangeNotifier {
 
   Future<void> loadStores() async {
     if (_loadingStores) return;
+
+    // ── Stale-while-revalidate: show cached data immediately ──
+    if (_stores.isEmpty) {
+      final cached = await HomeCacheService.loadStores();
+      if (cached != null && cached.isNotEmpty) {
+        _stores = cached;
+        notifyListeners();
+      }
+    }
+
     _loadingStores = true;
-    notifyListeners();
+    // Don't notifyListeners here if we already have cached data (avoids flicker)
+    if (_stores.isEmpty) notifyListeners();
     try {
       final api = ApiService(token: _token);
       final res = await api.get('/customer/stores');
       _stores = res is List ? res : (res?['stores'] is List ? res['stores'] : []);
+      // Save to cache in background
+      unawaited(HomeCacheService.saveStores(_stores));
     } catch (_) {
-      // Keep existing stores if network fails
+      // Keep existing stores (cached or empty) if network fails
     } finally {
       _loadingStores = false;
       notifyListeners();
@@ -193,13 +207,22 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> loadCategories() async {
+    // ── Stale-while-revalidate ──
+    if (_categories.isEmpty) {
+      final cached = await HomeCacheService.loadCategories();
+      if (cached != null && cached.isNotEmpty) {
+        _categories = cached;
+        notifyListeners();
+      }
+    }
     try {
       final api = ApiService(token: _token);
       final res = await api.get('/customer/categories');
       _categories = res is List ? res : [];
+      unawaited(HomeCacheService.saveCategories(_categories));
       notifyListeners();
     } catch (_) {
-      // silently fail — static categories shown as fallback
+      // silently fail — cached or static categories shown as fallback
     }
   }
 
@@ -226,8 +249,25 @@ class AppState extends ChangeNotifier {
   Future<void> loadHomeCms({bool force = false}) async {
     // Skip re-fetch if data is already loaded, unless forced (e.g. pull-to-refresh)
     if (!force && _homeBanners.isNotEmpty) return;
+
+    // ── Stale-while-revalidate: show cached CMS immediately ──
+    if (_homeBanners.isEmpty) {
+      final cached = await HomeCacheService.loadCms();
+      if (cached != null) {
+        _homeBanners       = cached['banners']        is List ? List.from(cached['banners'])        : [];
+        _homePromotions    = cached['promotions']     is List ? List.from(cached['promotions'])     : [];
+        _homeSections      = cached['sections']       is List ? List.from(cached['sections'])       : [];
+        _homeCmsCategories = cached['categories']     is List ? List.from(cached['categories'])     : [];
+        _featuredStores    = cached['featuredStores'] is List ? List.from(cached['featuredStores']) : [];
+        if (_homeBanners.isNotEmpty || _homeCmsCategories.isNotEmpty) {
+          notifyListeners();
+        }
+      }
+    }
+
     _cmsLoading = true;
-    notifyListeners();
+    // Only notify loading if we have no cached data to show
+    if (_homeBanners.isEmpty) notifyListeners();
     try {
       final api = ApiService(token: _token);
       final res = await api.get('/home-cms/public');
@@ -237,9 +277,11 @@ class AppState extends ChangeNotifier {
         _homeSections      = res['sections']       is List ? List.from(res['sections'])       : [];
         _homeCmsCategories = res['categories']     is List ? List.from(res['categories'])     : [];
         _featuredStores    = res['featuredStores'] is List ? List.from(res['featuredStores']) : [];
+        // Save to disk cache
+        unawaited(HomeCacheService.saveCms(Map<String, dynamic>.from(res)));
       }
     } catch (_) {
-      // silently fail — CMS content remains empty, app shows skeleton
+      // silently fail — cached or skeleton content remains
     } finally {
       _cmsLoading = false;
       notifyListeners();
