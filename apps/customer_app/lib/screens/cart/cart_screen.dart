@@ -259,22 +259,25 @@ class _CartContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = state.cartTotal + deliveryFee - couponDiscount;
+    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
-    return Column(
+    return Stack(
       children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 100),
-            children: [
-              // Phase 1: Store header
-              CartStoreHeader(
-                storeName: _storeName,
-                storeLogoUrl: _storeLogoUrl,
-                onViewStore: _merchantId != null
-                    ? () => _openCartStore(context)
-                    : null,
-              ),
-              const SizedBox(height: 8),
+        Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 100),
+                children: [
+                  // Phase 1: Store header
+                  CartStoreHeader(
+                    storeName: _storeName,
+                    storeLogoUrl: _storeLogoUrl,
+                    onViewStore: _merchantId != null
+                        ? () => _openCartStore(context)
+                        : null,
+                  ),
+                  const SizedBox(height: 8),
               // Phase 3: Cart items
               ...cart.map((item) => CartItemCard(
                     key: ValueKey(item['id']),
@@ -371,6 +374,17 @@ class _CartContent extends StatelessWidget {
           state: state,
         ),
       ],
+    ),
+    // ── Floating WhatsApp support button ─────────────────────────────────
+    if (supportWhatsappNumber.isNotEmpty && !keyboardOpen)
+      Positioned(
+        left: 16,
+        bottom: 100, // above sticky checkout bar
+        child: _WhatsAppFab(
+          number: supportWhatsappNumber,
+        ),
+      ),
+    ],
     );
   }
 }
@@ -734,6 +748,8 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
 
   Future<void> _submit() async {
     if (_submitting || widget.state.checkingOut) return;
+    debugPrint('[CHECKOUT] Checkout button pressed');
+    debugPrint('[CHECKOUT] JWT token exists? ${((widget.state.token ?? '').isNotEmpty) ? 'yes' : 'no'}');
     final name  = _nameCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
     final addr  = _addrCtrl.text.trim();
@@ -745,23 +761,44 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
     final walletBal = widget.state.walletBalance;
     final cartTot   = widget.state.cartTotal;
     final walletAmt = _useWallet ? walletBal.clamp(0.0, cartTot) : 0.0;
-    final ok = await widget.state.checkout(
-      name:        name,
-      phone:       phone,
-      address:     addr,
-      governorate: _governorate!,
-      notes:       _noteCtrl.text.trim(),
-      useWallet:   _useWallet && walletAmt > 0,
-      walletAmount: walletAmt,
-    );
-    if (!mounted) return;
-    setState(() => _submitting = false);
-    if (ok) {
-      Navigator.pop(context); // close sheet
-      _snack('تم تأكيد طلبك بنجاح ✓ 🎉', isError: false);
-      widget.state.showScreen(AppScreen.orders, bottomIndex: 1);
-    } else {
+    try {
+      final ok = await widget.state.checkout(
+        name:        name,
+        phone:       phone,
+        address:     addr,
+        governorate: _governorate!,
+        notes:       _noteCtrl.text.trim(),
+        useWallet:   _useWallet && walletAmt > 0,
+        walletAmount: walletAmt,
+      );
+      debugPrint('[CHECKOUT] checkout() returned $ok');
+      if (!mounted) return;
+      if (ok) {
+        Navigator.pop(context); // close sheet
+        _snack('تم تأكيد طلبك بنجاح ✓ 🎉', isError: false);
+        widget.state.showScreen(AppScreen.orders, bottomIndex: 1);
+        return;
+      }
+      final sessionExpired = widget.state.consumeCheckoutSessionExpired();
+      if (sessionExpired) {
+        _snack('انتهت صلاحية الجلسة، يرجى تسجيل الدخول مرة أخرى', isError: true);
+        await widget.state.forceLogoutToLogin();
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+        return;
+      }
       _snack('حدث خطأ، يرجى المحاولة مرة أخرى', isError: true);
+    } catch (e, st) {
+      debugPrint('[CHECKOUT] checkout exception: $e');
+      debugPrintStack(stackTrace: st);
+      if (mounted) {
+        _snack('حدث خطأ، يرجى المحاولة مرة أخرى', isError: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
     }
   }
 
@@ -966,6 +1003,69 @@ class _ConfirmButton extends StatelessWidget {
                     ),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Floating WhatsApp support button for checkout
+// ─────────────────────────────────────────────────────────────────────────────
+class _WhatsAppFab extends StatelessWidget {
+  final String number;
+  const _WhatsAppFab({required this.number});
+
+  static const _checkoutMessage =
+      'مرحبًا، أحتاج مساعدة في إتمام الطلب داخل تطبيق سوق العسل';
+
+  Future<void> _openWhatsApp(BuildContext context) async {
+    final normalized = number.startsWith('+') ? number.substring(1) : number;
+    final encoded = Uri.encodeComponent(_checkoutMessage);
+    final uri = Uri.parse('https://wa.me/$normalized?text=$encoded');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'واتساب غير مثبت على هذا الجهاز',
+            style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600),
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Color(0xFFE53935),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(28),
+        onTap: () => _openWhatsApp(context),
+        child: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: const Color(0xFF25D366),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF25D366).withOpacity(0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.support_agent_rounded,
+            color: Colors.white,
+            size: 26,
+          ),
         ),
       ),
     );
