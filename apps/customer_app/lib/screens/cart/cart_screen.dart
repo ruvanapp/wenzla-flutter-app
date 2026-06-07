@@ -22,6 +22,7 @@ class _CartScreenState extends State<CartScreen> {
   String _supportWhatsappNumber = '';
   String _supportWhatsappMessage =
       'السلام عليكم، محتاج مساعدة في تطبيق سوق العسل';
+  double _minimumOrder = 0;
 
   static const _deliveryFee = 0.0; // free delivery for now
 
@@ -29,6 +30,7 @@ class _CartScreenState extends State<CartScreen> {
   void initState() {
     super.initState();
     _loadSupportWhatsapp();
+    _loadMinimumOrder();
   }
 
   Future<void> _loadSupportWhatsapp() async {
@@ -41,6 +43,19 @@ class _CartScreenState extends State<CartScreen> {
         _supportWhatsappMessage = (res['message'] as String? ??
                 'السلام عليكم، محتاج مساعدة في تطبيق سوق العسل')
             .trim();
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _loadMinimumOrder() async {
+    try {
+      final api = ApiService(token: context.read<AppState>().token);
+      final res = await api.get('/customer/settings/minimum-order');
+      if (!mounted || res is! Map) return;
+      setState(() {
+        _minimumOrder = (res['amount'] is num)
+            ? (res['amount'] as num).toDouble()
+            : double.tryParse('${res['amount']}') ?? 0;
       });
     } catch (_) {}
   }
@@ -82,6 +97,7 @@ class _CartScreenState extends State<CartScreen> {
             onDiscountChanged: (d) => setState(() => _couponDiscount = d),
             supportWhatsappNumber: _supportWhatsappNumber,
             onSupportTap: _openSupportWhatsapp,
+            minimumOrder: _minimumOrder,
           );
         },
       ),
@@ -199,6 +215,7 @@ class _CartContent extends StatelessWidget {
   final ValueChanged<double> onDiscountChanged;
   final String supportWhatsappNumber;
   final Future<void> Function() onSupportTap;
+  final double minimumOrder;
 
   const _CartContent({
     super.key,
@@ -209,6 +226,7 @@ class _CartContent extends StatelessWidget {
     required this.onDiscountChanged,
     required this.supportWhatsappNumber,
     required this.onSupportTap,
+    required this.minimumOrder,
   });
 
   String get _storeName =>
@@ -268,7 +286,7 @@ class _CartContent extends StatelessWidget {
           children: [
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.only(bottom: 100),
+                padding: EdgeInsets.only(bottom: minimumOrder > 0 ? 190 : 100),
                 children: [
                   // Phase 1: Store header
                   CartStoreHeader(
@@ -372,6 +390,8 @@ class _CartContent extends StatelessWidget {
         // Phase 6: Sticky checkout bar
         _StickyCheckoutBar(
           total: total.clamp(0, double.infinity),
+          subtotal: state.cartTotal,
+          minimumOrder: minimumOrder,
           state: state,
         ),
       ],
@@ -380,7 +400,7 @@ class _CartContent extends StatelessWidget {
     if (supportWhatsappNumber.isNotEmpty && !keyboardOpen)
       Positioned(
         left: 16,
-        bottom: 110, // above sticky checkout bar
+        bottom: minimumOrder > 0 ? 200 : 110, // above sticky checkout bar (taller when banner shown)
         child: _WhatsAppFab(
           number: supportWhatsappNumber,
         ),
@@ -395,12 +415,20 @@ class _CartContent extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _StickyCheckoutBar extends StatelessWidget {
   final double total;
+  final double subtotal;
+  final double minimumOrder;
   final AppState state;
 
-  const _StickyCheckoutBar({required this.total, required this.state});
+  const _StickyCheckoutBar({
+    required this.total,
+    required this.subtotal,
+    required this.minimumOrder,
+    required this.state,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final showMinBanner = minimumOrder > 0;
     return Container(
       decoration: BoxDecoration(
         color: kSurface,
@@ -416,37 +444,141 @@ class _StickyCheckoutBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Total
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('الإجمالي',
-                      style: TextStyle(
-                          color: kTextMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600)),
-                  Text(
-                    '${total.toStringAsFixed(0)} ج.م',
-                    style: const TextStyle(
-                      color: kTextDark,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
+              if (showMinBanner) ...[
+                _MinOrderBanner(
+                  minimum: minimumOrder,
+                  current: subtotal,
+                ),
+                const SizedBox(height: 10),
+              ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  children: [
+                    // Total
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('الإجمالي',
+                            style: TextStyle(
+                                color: kTextMuted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600)),
+                        Text(
+                          '${total.toStringAsFixed(0)} ج.م',
+                          style: const TextStyle(
+                            color: kTextDark,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 20),
-              // Checkout button
-              Expanded(
-                child: _CheckoutBtn(state: state),
+                    const SizedBox(width: 20),
+                    // Checkout button
+                    Expanded(
+                      child: _CheckoutBtn(state: state),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Minimum-order banner with progress bar (sits on top of sticky bar)
+// ─────────────────────────────────────────────────────────────────────────────
+class _MinOrderBanner extends StatelessWidget {
+  final double minimum;
+  final double current;
+  const _MinOrderBanner({required this.minimum, required this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    final reached = current >= minimum;
+    final progress = minimum <= 0 ? 1.0 : (current / minimum).clamp(0.0, 1.0);
+    final remaining = (minimum - current).clamp(0.0, double.infinity);
+
+    final accent = reached ? const Color(0xFF22A05B) : const Color(0xFFD4A437);
+    final bg = reached ? const Color(0xFFE8F7EE) : const Color(0xFFFFF8E5);
+    final border = reached ? const Color(0xFFB7E4C7) : const Color(0xFFFFD93D);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              Text(
+                reached ? '✅' : '🛒',
+                style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'الحد الأدنى للطلب: ${minimum.toStringAsFixed(0)} جنيه',
+                  style: const TextStyle(
+                    fontFamily: 'Cairo',
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: kTextDark,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
+              Text(
+                '${current.toStringAsFixed(0)} / ${minimum.toStringAsFixed(0)}',
+                style: TextStyle(
+                  fontFamily: 'Cairo',
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 7,
+              backgroundColor: Colors.white,
+              valueColor: AlwaysStoppedAnimation<Color>(accent),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            reached
+                ? 'تم الوصول للحد الأدنى للطلب'
+                : 'أضف ${remaining.toStringAsFixed(0)} جنيه لإتمام الطلب',
+            style: TextStyle(
+              fontFamily: 'Cairo',
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              color: accent,
+            ),
+            textDirection: TextDirection.rtl,
+          ),
+        ],
       ),
     );
   }
