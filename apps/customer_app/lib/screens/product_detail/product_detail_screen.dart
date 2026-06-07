@@ -91,7 +91,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       imageUrl: NetImage.optimizeCloudinaryUrl(
                             imgUrl, width: 1200, height: 600) ??
                           imgUrl,
-                      fit: BoxFit.contain,
+                      fit: BoxFit.cover,
                       // Show cached grid thumbnail instantly while full-res loads
                       placeholder: (_, __) => CachedNetworkImage(
                         imageUrl: NetImage.optimizeCloudinaryUrl(

@@ -758,8 +758,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildFeaturedStoreCard(Map<String, dynamic> store) {
     final name     = (store['storeName'] as String?) ?? '';
-    final logoUrl  = _homeImageUrl(
-      store['logoUrl'] as String?,
+    // Prefer bannerUrl (landscape) for the card image area; fall back to logoUrl
+    final cardImageUrl = _homeImageUrl(
+      (store['bannerUrl'] as String?)?.isNotEmpty == true
+          ? store['bannerUrl'] as String?
+          : store['logoUrl'] as String?,
       width: 352,
       height: 180,
       crop: 'fill',
@@ -770,9 +773,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     Widget logoArea() {
       const radius = BorderRadius.vertical(top: Radius.circular(16));
-      if (logoUrl != null && logoUrl.isNotEmpty) {
+      if (cardImageUrl != null && cardImageUrl.isNotEmpty) {
         return NetImage(
-          url: logoUrl,
+          url: cardImageUrl,
           height: 90,
           fit: BoxFit.cover,
           borderRadius: radius,
@@ -1075,8 +1078,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final name      = (store['storeName'] as String?) ?? '';
     final logoUrl   = _homeImageUrl(
       store['logoUrl'] as String?,
-      width: 144,
-      height: 144,
+      width: 360,
+      height: 230,
       crop: 'fill',
     );
     final rating    = double.tryParse(store['averageRating']?.toString() ?? '0') ?? 0;
