@@ -89,15 +89,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               background: imgUrl != null && imgUrl.startsWith('http')
                   ? CachedNetworkImage(
                       imageUrl: NetImage.optimizeCloudinaryUrl(
-                            imgUrl, width: 1200, height: 600) ??
+                            imgUrl, width: 1080, height: 780) ??
                           imgUrl,
                       fit: BoxFit.cover,
-                      // Show cached grid thumbnail instantly while full-res loads
+                      alignment: Alignment.center,
+                      fadeInDuration: const Duration(milliseconds: 150),
+                      // Show cached grid thumbnail instantly (same 18:13 ratio)
                       placeholder: (_, __) => CachedNetworkImage(
                         imageUrl: NetImage.optimizeCloudinaryUrl(
                               imgUrl, width: 360, height: 260) ??
                             imgUrl,
                         fit: BoxFit.cover,
+                        alignment: Alignment.center,
                         fadeInDuration: Duration.zero,
                         fadeOutDuration: Duration.zero,
                         placeholder: (_, __) => Container(
