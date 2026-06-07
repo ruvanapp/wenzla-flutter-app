@@ -92,9 +92,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             imgUrl, width: 1200, height: 600) ??
                           imgUrl,
                       fit: BoxFit.contain,
-                      placeholder: (_, __) => Container(
-                        color: kSurfaceWarm,
-                        child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),
+                      // Show cached grid thumbnail instantly while full-res loads
+                      placeholder: (_, __) => CachedNetworkImage(
+                        imageUrl: NetImage.optimizeCloudinaryUrl(
+                              imgUrl, width: 360, height: 260) ??
+                            imgUrl,
+                        fit: BoxFit.cover,
+                        fadeInDuration: Duration.zero,
+                        fadeOutDuration: Duration.zero,
+                        placeholder: (_, __) => Container(
+                          color: kSurfaceWarm,
+                          child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),
+                        errorWidget: (_, __, ___) => Container(
+                          color: kSurfaceWarm,
+                          child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),
+                      ),
                       errorWidget: (_, __, ___) => Container(
                         color: kSurfaceWarm,
                         child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),
