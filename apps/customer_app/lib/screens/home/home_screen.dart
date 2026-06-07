@@ -695,7 +695,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const SectionTitle('متاجر مميزة', subtitle: 'متاجر موثقة بعناية وتجربة فاخرة'),
             SizedBox(
-              height: 206,
+              height: 192,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -738,7 +738,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           const SectionTitle('متاجر مميزة', subtitle: 'متاجر موثقة بعناية وتجربة فاخرة'),
           SizedBox(
-            height: 206,
+            height: 192,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding:         const EdgeInsets.symmetric(horizontal: 14),
@@ -750,7 +750,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
         ],
       );
     });
@@ -764,25 +764,24 @@ class _HomeScreenState extends State<HomeScreen> {
           ? store['bannerUrl'] as String?
           : store['logoUrl'] as String?,
       width: 352,
-      height: 180,
+      height: 212,
       crop: 'fill',
     );
-    final rating   = double.tryParse(store['averageRating']?.toString() ?? '0') ?? 0;
-    final revCount = (store['reviewCount'] as int?) ?? 0;
+    final prodCount = (store['_count']?['products'] as int?) ?? 0;
     final customLabel = (store['customLabel'] as String?)?.trim();
 
     Widget logoArea() {
-      const radius = BorderRadius.vertical(top: Radius.circular(16));
+      const radius = BorderRadius.vertical(top: Radius.circular(20));
       if (cardImageUrl != null && cardImageUrl.isNotEmpty) {
         return NetImage(
           url: cardImageUrl,
-          height: 90,
+          height: 106,
           fit: BoxFit.cover,
           borderRadius: radius,
           fallback: '',
         );
       }
-      return _gradientLogoBox(name, 90, 60, radius);
+      return _gradientLogoBox(name, 106, 64, radius);
     }
 
     return TapScaleWidget(
@@ -792,93 +791,80 @@ class _HomeScreenState extends State<HomeScreen> {
         margin: const EdgeInsets.symmetric(horizontal: 7),
         decoration: BoxDecoration(
           color: kSurface,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: kBorder.withOpacity(0.45)),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: kBorder.withOpacity(0.4)),
           boxShadow: [
             ...kCardShadow,
             BoxShadow(
-              color: kHoney.withOpacity(0.08),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
+              color: kHoney.withOpacity(0.07),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Stack(
               children: [
                 logoArea(),
                 Positioned(
-                  top: 10,
-                  right: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.92),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.verified_rounded, color: kSuccess, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          customLabel?.isNotEmpty == true ? customLabel! : 'موثق',
-                          style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: kTextDark,
-                          ),
-                        ),
-                      ],
-                    ),
+                  top: 8,
+                  right: 8,
+                  child: _verifiedBadge(
+                    customLabel?.isNotEmpty == true ? customLabel! : 'موثق',
                   ),
                 ),
               ],
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name,
-                    style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700,
-                      fontSize: 14, color: kTextDark),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (rating > 0 || revCount > 0) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(Icons.star_rounded, color: kHoney, size: 14),
-                        const SizedBox(width: 2),
-                        Text(rating.toStringAsFixed(1),
-                          style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700,
-                            fontSize: 12, color: kHoney)),
-                        if (revCount > 0) ...[
-                          const SizedBox(width: 4),
-                          Text('($revCount)', style: const TextStyle(
-                            fontFamily: 'Cairo', fontSize: 10, color: kTextMuted)),
-                        ],
-                      ],
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13.5,
+                      color: kTextDark,
                     ),
-                  ],
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: kSurfaceWarm,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: const Text(
-                      'توصيل خلال 3 أيام • جودة مختارة',
-                      style: TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: kTextBrown,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  // Compact info row: 🚚 3 أيام · 📦 X منتج
+                  Row(
+                    textDirection: TextDirection.rtl,
+                    children: [
+                      const Icon(Icons.local_shipping_outlined, color: kHoney, size: 11),
+                      const SizedBox(width: 3),
+                      const Text(
+                        '٣ أيام',
+                        style: TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: kTextBrown,
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.inventory_2_outlined, color: kTextBrown, size: 11),
+                      const SizedBox(width: 3),
+                      Flexible(
+                        child: Text(
+                          prodCount > 0 ? '$prodCount منتج' : 'متجر جديد',
+                          style: const TextStyle(
+                            fontFamily: 'Cairo',
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            color: kTextBrown,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -903,12 +889,12 @@ class _HomeScreenState extends State<HomeScreen> {
           crop: 'fill',
         );
         return Container(
-          margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          margin: const EdgeInsets.fromLTRB(14, 4, 14, 8),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
                 colors: [kRoyal, Color(0xFF7B3B00)],
                 begin: Alignment.centerRight, end: Alignment.centerLeft),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               ...kCardShadow,
               BoxShadow(
@@ -967,19 +953,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // Fallback static promo
       return Container(
-        margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        padding: const EdgeInsets.all(20),
+        margin: const EdgeInsets.fromLTRB(14, 4, 14, 8),
+        padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
               colors: [kRoyal, Color(0xFF7B3B00)],
               begin: Alignment.centerRight, end: Alignment.centerLeft),
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             ...kCardShadow,
             BoxShadow(
               color: kRoyal.withOpacity(0.14),
-              blurRadius: 18,
-              offset: const Offset(0, 10),
+              blurRadius: 14,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
@@ -989,26 +975,60 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const HoneyChip('نصيحة خبراء العسل', background: Color(0x33FFFFFF), textColor: Colors.white),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'كيف تختار عسلًا طبيعيًا أصيلًا؟',
+                    style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: Colors.white,
+                      height: 1.3,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  const Text('كيف تختار\nعسلًا طبيعيًا أصيلًا؟',
-                      style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700, fontSize: 15, color: Colors.white)),
-                  const SizedBox(height: 10),
                   OutlinedButton(
                     onPressed: () {},
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
                       side: const BorderSide(color: Colors.white60),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      minimumSize: const Size(0, 32),
                     ),
-                    child: const Text('اقرأ الدليل', style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600, fontSize: 12)),
+                    child: const Text(
+                      'اقرأ الدليل',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-            const Text('🌿', style: TextStyle(fontSize: 56)),
+            const SizedBox(width: 10),
+            // Circular icon container (replaces large emoji for cleaner look)
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.14),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withOpacity(0.28), width: 1),
+              ),
+              child: const Center(
+                child: Icon(
+                  Icons.menu_book_rounded,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+            ),
           ],
         ),
       );
@@ -1029,8 +1049,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 physics:      const NeverScrollableScrollPhysics(),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  crossAxisSpacing: 12, mainAxisSpacing: 12,
-                  childAspectRatio: 0.88,
+                  crossAxisSpacing: 10, mainAxisSpacing: 10,
+                  childAspectRatio: 0.95,
                 ),
                 itemCount: 6,
                 itemBuilder: (_, __) => const SkeletonStoreCard(),
@@ -1059,8 +1079,8 @@ class _HomeScreenState extends State<HomeScreen> {
               physics:      const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
-                crossAxisSpacing: 12, mainAxisSpacing: 12,
-                childAspectRatio: 0.88,
+                crossAxisSpacing: 10, mainAxisSpacing: 10,
+                childAspectRatio: 0.95,
               ),
               itemCount: stores.length,
               itemBuilder: (_, i) => FadeInWidget(
@@ -1076,28 +1096,30 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildStoreGridCard(Map<String, dynamic> store) {
     final name      = (store['storeName'] as String?) ?? '';
-    final logoUrl   = _homeImageUrl(
-      store['logoUrl'] as String?,
+    // Banner first (landscape), fall back to logo (square) — keeps this card
+    // visually consistent with the Featured card.
+    final cardImageUrl = _homeImageUrl(
+      (store['bannerUrl'] as String?)?.isNotEmpty == true
+          ? store['bannerUrl'] as String?
+          : store['logoUrl'] as String?,
       width: 360,
-      height: 230,
+      height: 260,
       crop: 'fill',
     );
-    final rating    = double.tryParse(store['averageRating']?.toString() ?? '0') ?? 0;
-    final revCount  = (store['reviewCount'] as int?) ?? 0;
     final prodCount = (store['_count']?['products'] as int?) ?? 0;
 
     Widget logoArea() {
-      if (logoUrl != null && logoUrl.isNotEmpty) {
+      const radius = BorderRadius.vertical(top: Radius.circular(20));
+      if (cardImageUrl != null && cardImageUrl.isNotEmpty) {
         return NetImage(
-          url: logoUrl,
-          height: 115,
+          url: cardImageUrl,
+          height: 130,
           fit: BoxFit.cover,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: radius,
           fallback: '',
         );
       }
-      return _gradientLogoBox(name, 115, 68,
-        const BorderRadius.vertical(top: Radius.circular(16)));
+      return _gradientLogoBox(name, 130, 72, radius);
     }
 
     return TapScaleWidget(
@@ -1105,14 +1127,14 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         decoration: BoxDecoration(
           color: kSurface,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: kBorder.withOpacity(0.4)),
           boxShadow: [
             ...kCardShadow,
             BoxShadow(
               color: kHoney.withOpacity(0.07),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -1121,77 +1143,42 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Stack(
               children: [
-            logoArea(),
+                logoArea(),
                 Positioned(
                   top: 8,
                   right: 8,
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.95),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.verified_rounded,
-                      color: kSuccess,
-                      size: 13,
-                    ),
-                  ),
+                  child: _verifiedBadge('موثق'),
                 ),
               ],
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(name,
-                    style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700,
-                      fontSize: 13, color: kTextDark),
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: kTextDark,
+                    ),
                     textAlign: TextAlign.center,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (rating > 0 || revCount > 0) ...[
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.star_rounded, color: kHoney, size: 12),
-                        const SizedBox(width: 2),
-                        Text(rating.toStringAsFixed(1),
-                          style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700,
-                            fontSize: 11, color: kHoney)),
-                        if (revCount > 0) ...[
-                          const SizedBox(width: 3),
-                          Text('($revCount)', style: const TextStyle(
-                            fontFamily: 'Cairo', fontSize: 10, color: kTextMuted)),
-                        ],
-                      ],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    prodCount > 0 ? '$prodCount منتج' : 'متجر جديد',
+                    style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: kTextMuted,
                     ),
-                  ],
-                  const SizedBox(height: 5),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: kSurfaceWarm,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Text(
-                      prodCount > 0 ? '$prodCount منتج' : 'متجر جديد',
-                      style: const TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        color: kTextBrown,
-                      ),
-                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
@@ -1213,6 +1200,40 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: radius,
       ),
       child: Center(child: StoreLogoWidget(storeName: name, size: logoSize)),
+    );
+  }
+
+  /// Unified verified badge used by both Featured and All Stores cards.
+  Widget _verifiedBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.verified_rounded, color: kSuccess, size: 12),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: const TextStyle(
+              fontFamily: 'Cairo',
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: kTextDark,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
