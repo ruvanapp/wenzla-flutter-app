@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/api_service.dart';
@@ -379,7 +380,7 @@ class _CartContent extends StatelessWidget {
     if (supportWhatsappNumber.isNotEmpty && !keyboardOpen)
       Positioned(
         left: 16,
-        bottom: 100, // above sticky checkout bar
+        bottom: 110, // above sticky checkout bar
         child: _WhatsAppFab(
           number: supportWhatsappNumber,
         ),
@@ -1042,32 +1043,54 @@ class _WhatsAppFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(28),
-        onTap: () => _openWhatsApp(context),
-        child: Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            color: const Color(0xFF25D366),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF25D366).withOpacity(0.35),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Branded WhatsApp FAB
+        GestureDetector(
+          onTap: () => _openWhatsApp(context),
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: const Color(0xFF25D366),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF25D366).withOpacity(0.4),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: const Center(
+              child: FaIcon(
+                FontAwesomeIcons.whatsapp,
+                color: Colors.white,
+                size: 28,
               ),
-            ],
-          ),
-          child: const Icon(
-            Icons.support_agent_rounded,
-            color: Colors.white,
-            size: 26,
+            ),
           ),
         ),
-      ),
+        const SizedBox(height: 6),
+        // Tooltip label
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: const Text(
+            'تواصل عبر واتساب',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontFamily: 'Cairo',
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
