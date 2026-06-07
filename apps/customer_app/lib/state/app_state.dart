@@ -548,7 +548,7 @@ class AppState extends ChangeNotifier {
     required String name,
     required String phone,
     required String address,
-    required String governorate,
+    required String shippingZoneId,
     String? notes,
     String? lat,
     String? lng,
@@ -588,10 +588,6 @@ class AppState extends ChangeNotifier {
       'productId': i['id'],
       'quantity':  (i['qty'] as int?) ?? 1,
     }).toList();
-    // Combine address + governorate into deliveryAddress
-    final deliveryAddress = governorate.isNotEmpty
-        ? '$address، $governorate'
-        : address;
 
     // Determine payment method
     String paymentMethod = 'CASH_ON_DELIVERY';
@@ -609,7 +605,8 @@ class AppState extends ChangeNotifier {
         'merchantId':      merchantId,
         'customerName':    name,
         'customerPhone':   ApiService.normalisePhone(phone),
-        'deliveryAddress': deliveryAddress,
+        'deliveryAddress': address,
+        'shippingZoneId':  shippingZoneId,
         'items':           items,
         'paymentMethod':   paymentMethod,
         if (useWallet && walletAmount > 0) 'walletAmount': walletAmount,

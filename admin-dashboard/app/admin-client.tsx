@@ -249,6 +249,7 @@ const NAV_ITEMS = [
   ]},
   { group: 'المالية', items: [
     { key: 'financial',   icon: '💰', label: 'المالية والعمولات' },
+    { key: 'shipping',    icon: '🚚', label: 'رسوم الشحن' },
     { key: 'wallet_manual_credit', icon: '💳', label: 'إضافة رصيد يدوي' },
     { key: 'wallet_recharge_requests', icon: '🏦', label: 'طلبات شحن المحفظة' },
     { key: 'wallet_transactions', icon: '📒', label: 'سجل معاملات المحفظة' },
@@ -348,6 +349,11 @@ export default function AdminClient() {
   const [commissionPercentage, setCommissionPercentage] = useState('10');
   const [supportWhatsappNumber, setSupportWhatsappNumber] = useState('');
   const [supportWhatsappMessage, setSupportWhatsappMessage] = useState('');
+  const [shippingZones, setShippingZones] = useState<any[]>([]);
+  const [shippingLoading, setShippingLoading] = useState(false);
+  const [shippingSaving, setShippingSaving] = useState(false);
+  const [shippingNewName, setShippingNewName] = useState('');
+  const [shippingNewFee, setShippingNewFee] = useState('');
   const [walletRechargeRequests, setWalletRechargeRequests] = useState<WalletRechargeRequest[]>([]);
   const [walletRechargeActionLoadingId, setWalletRechargeActionLoadingId] = useState<string | null>(null);
   const [selectedRechargeRequest, setSelectedRechargeRequest] = useState<WalletRechargeRequest | null>(null);
@@ -460,6 +466,7 @@ export default function AdminClient() {
 
   useEffect(() => {
     loadSupportWhatsapp();
+    loadShippingZones();
   }, []);
 
   // Auto-dismiss success messages after 4.5 s
@@ -849,6 +856,72 @@ export default function AdminClient() {
       setMessage('فشل حفظ الإعدادات — تحقق من الاتصال بالخادم');
     } finally {
       setWhatsappSaving(false);
+    }
+  }
+
+  // ── Shipping Zones ────────────────────────────────────────────────────────
+  async function loadShippingZones() {
+    setShippingLoading(true);
+    try {
+      const res = await api<any[]>('/admin/shipping-zones');
+      setShippingZones(Array.isArray(res) ? res : []);
+    } catch {
+      setMessage('فشل تحميل مناطق الشحن');
+    } finally {
+      setShippingLoading(false);
+    }
+  }
+
+  async function saveShippingZones() {
+    setShippingSaving(true);
+    try {
+      const payload = shippingZones.map((z) => ({
+        id: z.id,
+        fee: Number(z.fee),
+        enabled: z.enabled,
+        sortOrder: z.sortOrder,
+      }));
+      await api('/admin/shipping-zones-bulk', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      setMessage('تم حفظ رسوم الشحن بنجاح ✓');
+    } catch {
+      setMessage('فشل حفظ رسوم الشحن');
+    } finally {
+      setShippingSaving(false);
+    }
+  }
+
+  async function addShippingZone() {
+    if (!shippingNewName.trim()) return;
+    try {
+      const res = await api<any>('/admin/shipping-zones', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: shippingNewName.trim(),
+          fee: Number(shippingNewFee) || 0,
+          enabled: true,
+          sortOrder: shippingZones.length + 1,
+        }),
+      });
+      setShippingZones([...shippingZones, res]);
+      setShippingNewName('');
+      setShippingNewFee('');
+      setMessage('تم إضافة المحافظة بنجاح ✓');
+    } catch (e: any) {
+      setMessage(e?.message || 'فشل إضافة المحافظة');
+    }
+  }
+
+  async function deleteShippingZone(id: string) {
+    if (!confirm('هل أنت متأكد من حذف هذه المحافظة؟')) return;
+    try {
+      await api(`/admin/shipping-zones/${id}`, { method: 'DELETE' });
+      setShippingZones(shippingZones.filter((z) => z.id !== id));
+      setMessage('تم حذف المحافظة بنجاح');
+    } catch {
+      setMessage('فشل حذف المحافظة');
     }
   }
 
@@ -2828,6 +2901,118 @@ export default function AdminClient() {
                   {commissions.length === 0 && <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>لا توجد عمولات بعد</div>}
                 </div>
               </div>
+            </div>
+          )}
+
+          {activePanel === 'shipping' && (
+            <div>
+              <div className="pg-header">
+                <div>
+                  <h2 className="pg-title">رسوم الشحن حسب المحافظة</h2>
+                  <p className="pg-subtitle">إدارة رسوم الشحن لكل محافظة — يتم تطبيقها تلقائيًا عند الطلب</p>
+                </div>
+                <button className="btn btn-primary" onClick={saveShippingZones} disabled={shippingSaving}>
+                  {shippingSaving ? 'جاري الحفظ...' : 'حفظ الكل'}
+                </button>
+              </div>
+
+              {/* Add new governorate */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  placeholder="اسم المحافظة الجديدة"
+                  value={shippingNewName}
+                  onChange={(e) => setShippingNewName(e.target.value)}
+                  style={{ flex: 1, minWidth: 160, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)' }}
+                />
+                <input
+                  type="number"
+                  placeholder="الرسوم (ج.م)"
+                  value={shippingNewFee}
+                  onChange={(e) => setShippingNewFee(e.target.value)}
+                  style={{ width: 120, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)' }}
+                  min="0"
+                />
+                <button className="btn btn-primary" onClick={addShippingZone} disabled={!shippingNewName.trim()}>
+                  + إضافة
+                </button>
+              </div>
+
+              {shippingLoading ? (
+                <div style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>جاري التحميل...</div>
+              ) : (
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>المحافظة</th>
+                        <th>رسوم الشحن (ج.م)</th>
+                        <th>الحالة</th>
+                        <th>الترتيب</th>
+                        <th>إجراءات</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shippingZones.map((zone, idx) => (
+                        <tr key={zone.id}>
+                          <td style={{ fontWeight: 600 }}>{zone.name}</td>
+                          <td>
+                            <input
+                              type="number"
+                              min="0"
+                              value={zone.fee}
+                              onChange={(e) => {
+                                const updated = [...shippingZones];
+                                updated[idx] = { ...updated[idx], fee: e.target.value };
+                                setShippingZones(updated);
+                              }}
+                              style={{ width: 100, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', textAlign: 'center' }}
+                            />
+                          </td>
+                          <td>
+                            <button
+                              className={`badge ${zone.enabled ? 'badge-success' : 'badge-danger'}`}
+                              style={{ cursor: 'pointer', border: 'none' }}
+                              onClick={() => {
+                                const updated = [...shippingZones];
+                                updated[idx] = { ...updated[idx], enabled: !updated[idx].enabled };
+                                setShippingZones(updated);
+                              }}
+                            >
+                              {zone.enabled ? 'مفعّل' : 'معطّل'}
+                            </button>
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              min="0"
+                              value={zone.sortOrder}
+                              onChange={(e) => {
+                                const updated = [...shippingZones];
+                                updated[idx] = { ...updated[idx], sortOrder: Number(e.target.value) };
+                                setShippingZones(updated);
+                              }}
+                              style={{ width: 60, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', textAlign: 'center' }}
+                            />
+                          </td>
+                          <td>
+                            <button
+                              className="btn btn-sm"
+                              style={{ color: '#dc3545', background: 'none', border: 'none', cursor: 'pointer' }}
+                              onClick={() => deleteShippingZone(zone.id)}
+                            >
+                              🗑️ حذف
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {shippingZones.length === 0 && (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>لا توجد مناطق شحن — أضف محافظة جديدة</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 

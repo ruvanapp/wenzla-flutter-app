@@ -579,18 +579,50 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
   final _phoneCtrl = TextEditingController();
   final _addrCtrl  = TextEditingController();
   final _noteCtrl  = TextEditingController();
-  String? _governorate;
+  String? _selectedZoneId;
+  double _shippingFee = 0;
+  bool _shippingDisabled = false;
   bool _submitting = false;
   bool _useWallet  = false;
+  List<Map<String, dynamic>> _zones = [];
+  bool _zonesLoading = true;
 
-  static const _govs = [
-    'القاهرة','الجيزة','الإسكندرية','الدقهلية','الشرقية',
-    'القليوبية','كفر الشيخ','الغربية','المنوفية','البحيرة',
-    'الإسماعيلية','بور سعيد','السويس','دمياط','الفيوم',
-    'بني سويف','المنيا','أسيوط','سوهاج','قنا','الأقصر',
-    'أسوان','البحر الأحمر','الوادي الجديد','مطروح',
-    'شمال سيناء','جنوب سيناء',
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadShippingZones();
+  }
+
+  Future<void> _loadShippingZones() async {
+    try {
+      final api = ApiService(token: widget.state.token);
+      final res = await api.get('/customer/shipping-zones');
+      if (!mounted || res is! List) return;
+      setState(() {
+        _zones = res.cast<Map<String, dynamic>>();
+        _zonesLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _zonesLoading = false);
+    }
+  }
+
+  void _onZoneChanged(String? zoneId) {
+    if (zoneId == null) {
+      setState(() {
+        _selectedZoneId = null;
+        _shippingFee = 0;
+        _shippingDisabled = false;
+      });
+      return;
+    }
+    final zone = _zones.firstWhere((z) => z['id'] == zoneId, orElse: () => {});
+    setState(() {
+      _selectedZoneId = zoneId;
+      _shippingFee = (zone['fee'] is num) ? (zone['fee'] as num).toDouble() : double.tryParse('${zone['fee']}') ?? 0;
+      _shippingDisabled = false;
+    });
+  }
 
   @override
   void dispose() {
@@ -667,18 +699,44 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                     _buildField(_phoneCtrl, 'رقم الهاتف',          Icons.phone_outlined,
                         type: TextInputType.phone),
                     const SizedBox(height: 12),
-                    // Governorate dropdown
-                    DropdownButtonFormField<String>(
-                      value: _governorate,
+                    // Governorate dropdown (dynamic from API)
+                    _zonesLoading
+                        ? const Center(child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+                          ))
+                        : DropdownButtonFormField<String>(
+                      value: _selectedZoneId,
                       isExpanded: true,
                       decoration: _inputDecoration('اختر المحافظة', Icons.location_on_outlined),
-                      items: _govs.map((g) => DropdownMenuItem(
-                        value: g,
-                        child: Text(g, textDirection: TextDirection.rtl,
+                      items: _zones.map((z) => DropdownMenuItem(
+                        value: z['id'] as String,
+                        child: Text(z['name'] as String, textDirection: TextDirection.rtl,
                             style: const TextStyle(fontSize: 14)),
                       )).toList(),
-                      onChanged: (v) => setState(() => _governorate = v),
+                      onChanged: _onZoneChanged,
                     ),
+                    if (_selectedZoneId != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: kSurfaceWarm,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: kBorder),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.local_shipping_outlined, color: kHoney, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              _shippingFee > 0 ? 'الشحن: ${_shippingFee.toStringAsFixed(0)} ج.م' : 'الشحن: مجاني',
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: kTextDark),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     _buildField(_addrCtrl, 'العنوان التفصيلي',    Icons.home_outlined,
                         maxLines: 2),
@@ -754,20 +812,24 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
     final name  = _nameCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
     final addr  = _addrCtrl.text.trim();
-    if (name.isEmpty || phone.isEmpty || addr.isEmpty || _governorate == null) {
-      _snack('يرجى ملء جميع حقول التوصيل', isError: true);
+    if (name.isEmpty || phone.isEmpty || addr.isEmpty || _selectedZoneId == null) {
+      if (_selectedZoneId == null) {
+        _snack('يرجى اختيار المحافظة لحساب الشحن', isError: true);
+      } else {
+        _snack('يرجى ملء جميع حقول التوصيل', isError: true);
+      }
       return;
     }
     setState(() => _submitting = true);
     final walletBal = widget.state.walletBalance;
-    final cartTot   = widget.state.cartTotal;
+    final cartTot   = widget.state.cartTotal + _shippingFee;
     final walletAmt = _useWallet ? walletBal.clamp(0.0, cartTot) : 0.0;
     try {
       final ok = await widget.state.checkout(
         name:        name,
         phone:       phone,
         address:     addr,
-        governorate: _governorate!,
+        shippingZoneId: _selectedZoneId!,
         notes:       _noteCtrl.text.trim(),
         useWallet:   _useWallet && walletAmt > 0,
         walletAmount: walletAmt,
