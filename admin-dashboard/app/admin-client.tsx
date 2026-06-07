@@ -354,6 +354,7 @@ export default function AdminClient() {
   const [shippingSaving, setShippingSaving] = useState(false);
   const [shippingNewName, setShippingNewName] = useState('');
   const [shippingNewFee, setShippingNewFee] = useState('');
+  const [shippingSearch, setShippingSearch] = useState('');
   const [minimumOrder, setMinimumOrder] = useState('0');
   const [minimumOrderSaving, setMinimumOrderSaving] = useState(false);
   const [walletRechargeRequests, setWalletRechargeRequests] = useState<WalletRechargeRequest[]>([]);
@@ -2959,7 +2960,7 @@ export default function AdminClient() {
               </div>
 
               {/* Add new governorate */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                 <input
                   type="text"
                   placeholder="اسم المحافظة الجديدة"
@@ -2980,6 +2981,27 @@ export default function AdminClient() {
                 </button>
               </div>
 
+              {/* Search */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+                <span style={{ fontSize: 16 }}>🔍</span>
+                <input
+                  type="text"
+                  placeholder="ابحث عن محافظة..."
+                  value={shippingSearch}
+                  onChange={(e) => setShippingSearch(e.target.value)}
+                  style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontFamily: 'Cairo' }}
+                />
+                {shippingSearch && (
+                  <button
+                    className="btn btn-sm"
+                    style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
+                    onClick={() => setShippingSearch('')}
+                  >
+                    مسح
+                  </button>
+                )}
+              </div>
+
               {shippingLoading ? (
                 <div style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>جاري التحميل...</div>
               ) : (
@@ -2995,7 +3017,14 @@ export default function AdminClient() {
                       </tr>
                     </thead>
                     <tbody>
-                      {shippingZones.map((zone, idx) => (
+                      {shippingZones
+                        .map((zone, idx) => ({ zone, idx }))
+                        .filter(({ zone }) =>
+                          shippingSearch.trim() === ''
+                            ? true
+                            : (zone.name as string).toLowerCase().includes(shippingSearch.trim().toLowerCase())
+                        )
+                        .map(({ zone, idx }) => (
                         <tr key={zone.id}>
                           <td style={{ fontWeight: 600 }}>{zone.name}</td>
                           <td>
@@ -3050,6 +3079,14 @@ export default function AdminClient() {
                       ))}
                       {shippingZones.length === 0 && (
                         <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>لا توجد مناطق شحن — أضف محافظة جديدة</td></tr>
+                      )}
+                      {shippingZones.length > 0 && shippingSearch.trim() !== '' &&
+                        shippingZones.filter((z) =>
+                          (z.name as string).toLowerCase().includes(shippingSearch.trim().toLowerCase())
+                        ).length === 0 && (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>
+                          لا توجد محافظات مطابقة لـ &ldquo;{shippingSearch}&rdquo;
+                        </td></tr>
                       )}
                     </tbody>
                   </table>
