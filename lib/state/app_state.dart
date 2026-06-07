@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/home_cache_service.dart';
 import '../services/storage_service.dart';
 
 enum AppScreen { home, orders, cart, login, storeDetail, productDetail }
@@ -32,6 +33,7 @@ class AppState extends ChangeNotifier {
   // ── Auth ─────────────────────────────────────────────────────────────────────
   String?               _token;
   Map<String, dynamic>? _user;
+  bool                  _checkoutSessionExpired = false;
 
   String?               get token => _token;
   Map<String, dynamic>? get user  => _user;
@@ -90,8 +92,25 @@ class AppState extends ChangeNotifier {
     _token = null;
     _user  = null;
     _orders = [];
+    _checkoutSessionExpired = false;
     await StorageService.clearAuth();
     showScreen(AppScreen.home, bottomIndex: 0);
+  }
+
+  bool consumeCheckoutSessionExpired() {
+    final expired = _checkoutSessionExpired;
+    _checkoutSessionExpired = false;
+    return expired;
+  }
+
+  Future<void> forceLogoutToLogin() async {
+    _token = null;
+    _user = null;
+    _orders = [];
+    _checkingOut = false;
+    _checkoutSessionExpired = false;
+    await StorageService.clearAuth();
+    showScreen(AppScreen.login, bottomIndex: 3);
   }
 
   // ── FCM token — pending-flush pattern ─────────────────────────────────────
@@ -128,11 +147,7 @@ class AppState extends ChangeNotifier {
           ...res,
         };
         await StorageService.saveAuth(_token!, _user ?? {});
-        if (!silent) {
-          notifyListeners();
-        } else {
-          notifyListeners();
-        }
+        if (!silent) notifyListeners();
       }
     } catch (_) {
       // Keep existing cached profile if refresh fails
@@ -164,14 +179,27 @@ class AppState extends ChangeNotifier {
 
   Future<void> loadStores() async {
     if (_loadingStores) return;
+
+    // ── Stale-while-revalidate: show cached data immediately ──
+    if (_stores.isEmpty) {
+      final cached = await HomeCacheService.loadStores();
+      if (cached != null && cached.isNotEmpty) {
+        _stores = cached;
+        notifyListeners();
+      }
+    }
+
     _loadingStores = true;
-    notifyListeners();
+    // Don't notifyListeners here if we already have cached data (avoids flicker)
+    if (_stores.isEmpty) notifyListeners();
     try {
       final api = ApiService(token: _token);
       final res = await api.get('/customer/stores');
       _stores = res is List ? res : (res?['stores'] is List ? res['stores'] : []);
+      // Save to cache in background
+      unawaited(HomeCacheService.saveStores(_stores));
     } catch (_) {
-      // Keep existing stores if network fails
+      // Keep existing stores (cached or empty) if network fails
     } finally {
       _loadingStores = false;
       notifyListeners();
@@ -179,13 +207,22 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> loadCategories() async {
+    // ── Stale-while-revalidate ──
+    if (_categories.isEmpty) {
+      final cached = await HomeCacheService.loadCategories();
+      if (cached != null && cached.isNotEmpty) {
+        _categories = cached;
+        notifyListeners();
+      }
+    }
     try {
       final api = ApiService(token: _token);
       final res = await api.get('/customer/categories');
       _categories = res is List ? res : [];
+      unawaited(HomeCacheService.saveCategories(_categories));
       notifyListeners();
     } catch (_) {
-      // silently fail — static categories shown as fallback
+      // silently fail — cached or static categories shown as fallback
     }
   }
 
@@ -209,9 +246,28 @@ class AppState extends ChangeNotifier {
   /// Whether the CMS has featured stores configured
   bool get hasFeaturedStores => _featuredStores.isNotEmpty;
 
-  Future<void> loadHomeCms() async {
+  Future<void> loadHomeCms({bool force = false}) async {
+    // Skip re-fetch if data is already loaded, unless forced (e.g. pull-to-refresh)
+    if (!force && _homeBanners.isNotEmpty) return;
+
+    // ── Stale-while-revalidate: show cached CMS immediately ──
+    if (_homeBanners.isEmpty) {
+      final cached = await HomeCacheService.loadCms();
+      if (cached != null) {
+        _homeBanners       = cached['banners']        is List ? List.from(cached['banners'])        : [];
+        _homePromotions    = cached['promotions']     is List ? List.from(cached['promotions'])     : [];
+        _homeSections      = cached['sections']       is List ? List.from(cached['sections'])       : [];
+        _homeCmsCategories = cached['categories']     is List ? List.from(cached['categories'])     : [];
+        _featuredStores    = cached['featuredStores'] is List ? List.from(cached['featuredStores']) : [];
+        if (_homeBanners.isNotEmpty || _homeCmsCategories.isNotEmpty) {
+          notifyListeners();
+        }
+      }
+    }
+
     _cmsLoading = true;
-    notifyListeners();
+    // Only notify loading if we have no cached data to show
+    if (_homeBanners.isEmpty) notifyListeners();
     try {
       final api = ApiService(token: _token);
       final res = await api.get('/home-cms/public');
@@ -221,9 +277,11 @@ class AppState extends ChangeNotifier {
         _homeSections      = res['sections']       is List ? List.from(res['sections'])       : [];
         _homeCmsCategories = res['categories']     is List ? List.from(res['categories'])     : [];
         _featuredStores    = res['featuredStores'] is List ? List.from(res['featuredStores']) : [];
+        // Save to disk cache
+        unawaited(HomeCacheService.saveCms(Map<String, dynamic>.from(res)));
       }
     } catch (_) {
-      // silently fail — CMS content remains empty, app shows skeleton
+      // silently fail — cached or skeleton content remains
     } finally {
       _cmsLoading = false;
       notifyListeners();
@@ -497,7 +555,24 @@ class AppState extends ChangeNotifier {
     bool useWallet = false,
     double walletAmount = 0,
   }) async {
-    if (!isLoggedIn || _cart.isEmpty) return false;
+    const traceLabel = 'CHECKOUT';
+    final stopwatch = Stopwatch()..start();
+    int? responseStatusCode;
+    void logResult(bool result, String reason) {
+      debugPrint('[$traceLabel] checkout() returned $result ($reason)');
+      debugPrint(
+        '[$traceLabel] checkout() duration: ${(stopwatch.elapsedMilliseconds / 1000).toStringAsFixed(2)}s',
+      );
+    }
+
+    debugPrint('[$traceLabel] checkout started');
+    debugPrint('[$traceLabel] JWT token exists? ${(_token != null && _token!.isNotEmpty) ? 'yes' : 'no'}');
+    _checkoutSessionExpired = false;
+
+    if (!isLoggedIn || _cart.isEmpty) {
+      logResult(false, 'preflight_failed');
+      return false;
+    }
     _checkingOut = true;
     notifyListeners();
     final api = ApiService(token: _token);
@@ -506,6 +581,7 @@ class AppState extends ChangeNotifier {
     if (merchantId == null) {
       _checkingOut = false;
       notifyListeners();
+      logResult(false, 'missing_merchant_id');
       return false;
     }
     final items = _cart.map((i) => {
@@ -538,8 +614,16 @@ class AppState extends ChangeNotifier {
         'paymentMethod':   paymentMethod,
         if (useWallet && walletAmount > 0) 'walletAmount': walletAmount,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
-      }, auth: true);
+      }, auth: true, traceLabel: traceLabel, onStatusCode: (statusCode) {
+        responseStatusCode = statusCode;
+      });
       _checkingOut = false;
+      if (responseStatusCode == 401 || responseStatusCode == 403) {
+        _checkoutSessionExpired = true;
+        notifyListeners();
+        logResult(false, 'auth_invalid_${responseStatusCode ?? 'unknown'}');
+        return false;
+      }
       if (res is Map && res['id'] != null) {
         _cart = [];
         await _saveCart();
@@ -549,13 +633,22 @@ class AppState extends ChangeNotifier {
           await refreshProfile(silent: true);
         }
         notifyListeners();
+        logResult(true, 'order_created');
         return true;
       }
       notifyListeners();
+      logResult(
+        false,
+        'api_returned_no_order_id${responseStatusCode != null ? '_$responseStatusCode' : ''}',
+      );
       return false;
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[$traceLabel] checkout() threw exception: $e');
+      debugPrintStack(stackTrace: st);
       _checkingOut = false;
+      _checkoutSessionExpired = false;
       notifyListeners();
+      logResult(false, 'exception');
       return false;
     }
   }

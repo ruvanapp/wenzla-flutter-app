@@ -76,7 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
           color: kHoney,
           onRefresh: () async {
             final st = context.read<AppState>();
-            await Future.wait([st.loadStores(), st.loadCategories()]);
+            await Future.wait([st.loadStores(), st.loadCategories(), st.loadHomeCms(force: true)]);
           },
           child: CustomScrollView(
             slivers: [
@@ -96,7 +96,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── AppBar ──────────────────────────────────────────────────────────────────
   Widget _buildAppBar(BuildContext context) {
-    final st = context.watch<AppState>();
     return SliverAppBar(
       backgroundColor:    kBackground,
       surfaceTintColor:   Colors.transparent,
@@ -136,24 +135,27 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       actions: [
-        Stack(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.shopping_bag_outlined, color: kTextDark),
-              onPressed: () => context.read<AppState>().showScreen(AppScreen.cart, bottomIndex: 2),
-            ),
-            if (st.cartCount > 0)
-              Positioned(
-                right: 6, top: 6,
-                child: Container(
-                  width: 18, height: 18,
-                  decoration: const BoxDecoration(color: kError, shape: BoxShape.circle),
-                  child: Center(child: Text('${st.cartCount}',
-                    style: const TextStyle(color: Colors.white, fontSize: 10,
-                      fontWeight: FontWeight.w700, fontFamily: 'Cairo'))),
-                ),
+        Selector<AppState, int>(
+          selector: (_, st) => st.cartCount,
+          builder: (ctx, cartCount, __) => Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.shopping_bag_outlined, color: kTextDark),
+                onPressed: () => ctx.read<AppState>().showScreen(AppScreen.cart, bottomIndex: 2),
               ),
-          ],
+              if (cartCount > 0)
+                Positioned(
+                  right: 6, top: 6,
+                  child: Container(
+                    width: 18, height: 18,
+                    decoration: const BoxDecoration(color: kError, shape: BoxShape.circle),
+                    child: Center(child: Text('$cartCount',
+                      style: const TextStyle(color: Colors.white, fontSize: 10,
+                        fontWeight: FontWeight.w700, fontFamily: 'Cairo'))),
+                  ),
+                ),
+            ],
+          ),
         ),
         IconButton(
           icon: const Icon(Icons.search_rounded, color: kTextDark),
@@ -166,12 +168,37 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Hero Banner ─────────────────────────────────────────────────────────────
   /// Resolve a relative imageUrl from the CMS backend to a full URL.
-  static String _resolveImgUrl(String url) =>
-      url.startsWith('http') ? url : '$kApiUrl$url';
+  /// Returns null for empty/invalid URLs so callers can skip Image.network.
+  static String? _resolveImgUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return null;
+    return url.startsWith('http') ? url : '$kApiUrl$url';
+  }
+
+  static String? _homeImageUrl(
+    String? url, {
+    double? width,
+    double? height,
+    String crop = 'fill',
+  }) {
+    final resolved = _resolveImgUrl(url);
+    return NetImage.optimizeCloudinaryUrl(
+      resolved,
+      width: width?.round(),
+      height: height?.round(),
+      crop: crop,
+    );
+  }
 
   Widget _buildHeroBanner() {
     return Consumer<AppState>(builder: (_, st, __) {
       final cmsBanners = st.homeBanners;
+
+      // ── Still loading: show shimmer instead of Pexels fallback ──────────────
+      if (st.cmsLoading && cmsBanners.isEmpty) {
+        return _buildBannerShimmer();
+      }
+
+      // ── CMS loaded: use real banners or Pexels as true offline fallback ─────
       final count = cmsBanners.isNotEmpty ? cmsBanners.length : _banners.length;
       return Padding(
         padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
@@ -253,13 +280,32 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Widget _buildBannerShimmer() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
+      child: SizedBox(
+        height: 224,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: ShimmerBox(height: 214),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDynamicBannerSlide(Map<String, dynamic> b) {
     final title    = (b['title'] as String?) ?? '';
     final subtitle = (b['subtitle'] as String?) ?? '';
     final btnText  = (b['buttonText'] as String?) ?? 'تسوق الآن';
-    final imageUrl = (b['imageUrl'] as String?) != null
-        ? _resolveImgUrl(b['imageUrl'] as String)
-        : null;
+    final imageUrl = _homeImageUrl(
+      b['imageUrl'] as String?,
+      width: 1200,
+      height: 448,
+      crop: 'fill',
+    );
     Color c1, c2;
     try {
       c1 = Color(int.parse((b['color1'] as String).replaceFirst('#', '0xFF')));
@@ -271,9 +317,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 2, 16, 8),
       decoration: BoxDecoration(
-        gradient: imageUrl == null
-            ? LinearGradient(colors: [c1, c2], begin: Alignment.centerRight, end: Alignment.centerLeft)
-            : null,
+        // Always show gradient — visible when image is null or fails to load
+        gradient: LinearGradient(colors: [c1, c2], begin: Alignment.centerRight, end: Alignment.centerLeft),
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           ...kLiftedShadow,
@@ -289,11 +334,10 @@ class _HomeScreenState extends State<HomeScreen> {
         fit: StackFit.expand,
         children: [
           if (imageUrl != null)
-            Image.network(imageUrl, fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                decoration: BoxDecoration(gradient: LinearGradient(colors: [c1, c2],
-                  begin: Alignment.centerRight, end: Alignment.centerLeft)),
-              ),
+            NetImage(
+              url: imageUrl,
+              fit: BoxFit.cover,
+              fallback: '',
             ),
           if (imageUrl != null)
             Container(decoration: BoxDecoration(
@@ -406,18 +450,15 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         // Background image (or gradient fallback)
         if (d.imageUrl != null)
-          Image.network(
-            d.imageUrl!,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [d.color1, d.color2],
-                  begin: Alignment.centerRight,
-                  end:   Alignment.centerLeft,
-                ),
-              ),
+          NetImage(
+            url: _homeImageUrl(
+              d.imageUrl,
+              width: 1200,
+              height: 448,
+              crop: 'fill',
             ),
+            fit: BoxFit.cover,
+            fallback: '',
           )
         else
           Container(
@@ -517,6 +558,11 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── Categories ──────────────────────────────────────────────────────────────
   Widget _buildCategoriesRow() {
     return Consumer<AppState>(builder: (_, st, __) {
+      // ── Loading: show shimmer skeleton ───────────────────────────────────────
+      if (st.cmsLoading && st.categories.isEmpty) {
+        return const SkeletonCategoryRow();
+      }
+
       // Prefer CMS-managed categories; fall back to API categories
       final useCms = st.hasCmsCategories;
       final cats   = useCms ? st.homeCmsCategories : st.categories;
@@ -557,13 +603,22 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       bgColor = kAmber;
     }
-    final imageWidget = imageUrl != null && imageUrl.isNotEmpty
+    final resolved = _homeImageUrl(
+      imageUrl,
+      width: 124,
+      height: 124,
+      crop: 'fill',
+    );
+    final imageWidget = resolved != null
         ? ClipRRect(
             borderRadius: BorderRadius.circular(18),
-            child: Image.network(
-              _resolveImgUrl(imageUrl), fit: BoxFit.cover, width: 62, height: 62,
-              errorBuilder: (_, __, ___) =>
-                  Center(child: Text(emoji, style: const TextStyle(fontSize: 26))),
+            child: NetImage(
+              url: resolved,
+              fit: BoxFit.cover,
+              width: 62,
+              height: 62,
+              borderRadius: BorderRadius.circular(18),
+              fallback: emoji,
             ),
           )
         : Center(child: Text(emoji, style: const TextStyle(fontSize: 26)));
@@ -703,28 +758,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildFeaturedStoreCard(Map<String, dynamic> store) {
     final name     = (store['storeName'] as String?) ?? '';
-    final logoUrl  = (store['logoUrl'] as String?);
+    final logoUrl  = _homeImageUrl(
+      store['logoUrl'] as String?,
+      width: 352,
+      height: 180,
+      crop: 'fill',
+    );
     final rating   = double.tryParse(store['averageRating']?.toString() ?? '0') ?? 0;
     final revCount = (store['reviewCount'] as int?) ?? 0;
     final customLabel = (store['customLabel'] as String?)?.trim();
 
-    Widget _logoArea() {
+    Widget logoArea() {
       const radius = BorderRadius.vertical(top: Radius.circular(16));
       if (logoUrl != null && logoUrl.isNotEmpty) {
-        return ClipRRect(
+        return NetImage(
+          url: logoUrl,
+          height: 90,
+          fit: BoxFit.cover,
           borderRadius: radius,
-          child: Image.network(
-            logoUrl,
-            height: 90, width: double.infinity, fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _gradientLogoBox(name, 90, 60, radius),
-          ),
+          fallback: '',
         );
       }
       return _gradientLogoBox(name, 90, 60, radius);
     }
 
     return TapScaleWidget(
-      onTap: () => context.read<AppState>().openStore(store['id'] as String),
+      onTap: () => context.read<AppState>().openStoreWithData(store.cast<String, dynamic>()),
       child: Container(
         width: 176,
         margin: const EdgeInsets.symmetric(horizontal: 7),
@@ -745,7 +804,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Stack(
               children: [
-                _logoArea(),
+                logoArea(),
                 Positioned(
                   top: 10,
                   right: 10,
@@ -784,19 +843,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700,
                       fontSize: 14, color: kTextDark),
                     maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(Icons.star_rounded, color: kHoney, size: 14),
-                      const SizedBox(width: 2),
-                      Text(rating.toStringAsFixed(1),
-                        style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700,
-                          fontSize: 12, color: kHoney)),
-                      const SizedBox(width: 4),
-                      Text('($revCount)', style: const TextStyle(
-                        fontFamily: 'Cairo', fontSize: 10, color: kTextMuted)),
-                    ],
-                  ),
+                  if (rating > 0 || revCount > 0) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(Icons.star_rounded, color: kHoney, size: 14),
+                        const SizedBox(width: 2),
+                        Text(rating.toStringAsFixed(1),
+                          style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700,
+                            fontSize: 12, color: kHoney)),
+                        if (revCount > 0) ...[
+                          const SizedBox(width: 4),
+                          Text('($revCount)', style: const TextStyle(
+                            fontFamily: 'Cairo', fontSize: 10, color: kTextMuted)),
+                        ],
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -830,9 +893,12 @@ class _HomeScreenState extends State<HomeScreen> {
         final p = st.homePromotions.first as Map<String, dynamic>;
         final title    = (p['title'] as String?) ?? '';
         final subtitle = (p['subtitle'] as String?) ?? '';
-        final imageUrl = (p['imageUrl'] as String?) != null
-            ? _resolveImgUrl(p['imageUrl'] as String)
-            : null;
+        final imageUrl = _homeImageUrl(
+          p['imageUrl'] as String?,
+          width: 720,
+          height: 280,
+          crop: 'fill',
+        );
         return Container(
           margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           decoration: BoxDecoration(
@@ -854,8 +920,11 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               if (imageUrl != null)
                 Positioned.fill(
-                  child: Image.network(imageUrl, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox()),
+                  child: NetImage(
+                    url: imageUrl,
+                    fit: BoxFit.cover,
+                    fallback: '',
+                  ),
                 ),
               if (imageUrl != null)
                 Positioned.fill(child: Container(
@@ -958,7 +1027,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   crossAxisSpacing: 12, mainAxisSpacing: 12,
-                  childAspectRatio: 0.79,
+                  childAspectRatio: 0.88,
                 ),
                 itemCount: 6,
                 itemBuilder: (_, __) => const SkeletonStoreCard(),
@@ -988,7 +1057,7 @@ class _HomeScreenState extends State<HomeScreen> {
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 12, mainAxisSpacing: 12,
-                childAspectRatio: 0.79,
+                childAspectRatio: 0.88,
               ),
               itemCount: stores.length,
               itemBuilder: (_, i) => FadeInWidget(
@@ -1004,29 +1073,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildStoreGridCard(Map<String, dynamic> store) {
     final name      = (store['storeName'] as String?) ?? '';
-    final logoUrl   = (store['logoUrl'] as String?);
+    final logoUrl   = _homeImageUrl(
+      store['logoUrl'] as String?,
+      width: 144,
+      height: 144,
+      crop: 'fill',
+    );
     final rating    = double.tryParse(store['averageRating']?.toString() ?? '0') ?? 0;
     final revCount  = (store['reviewCount'] as int?) ?? 0;
     final prodCount = (store['_count']?['products'] as int?) ?? 0;
 
-    Widget _logoArea() {
+    Widget logoArea() {
       if (logoUrl != null && logoUrl.isNotEmpty) {
-        return ClipRRect(
+        return NetImage(
+          url: logoUrl,
+          height: 115,
+          fit: BoxFit.cover,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          child: Image.network(
-            logoUrl,
-            height: 110, width: double.infinity, fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _gradientLogoBox(name, 110, 68,
-              const BorderRadius.vertical(top: Radius.circular(16))),
-          ),
+          fallback: '',
         );
       }
-      return _gradientLogoBox(name, 110, 68,
+      return _gradientLogoBox(name, 115, 68,
         const BorderRadius.vertical(top: Radius.circular(16)));
     }
 
     return TapScaleWidget(
-      onTap: () => context.read<AppState>().openStore(store['id'] as String),
+      onTap: () => context.read<AppState>().openStoreWithData(store.cast<String, dynamic>()),
       child: Container(
         decoration: BoxDecoration(
           color: kSurface,
@@ -1046,75 +1118,77 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Stack(
               children: [
-                _logoArea(),
+            logoArea(),
                 Positioned(
-                  top: 10,
-                  right: 10,
+                  top: 8,
+                  right: 8,
                   child: Container(
-                    width: 28,
-                    height: 28,
+                    width: 22,
+                    height: 22,
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.95),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.08),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
                         ),
                       ],
                     ),
                     child: const Icon(
                       Icons.verified_rounded,
                       color: kSuccess,
-                      size: 17,
+                      size: 13,
                     ),
                   ),
                 ),
               ],
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(name,
                     style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700,
-                      fontSize: 14, color: kTextDark),
+                      fontSize: 13, color: kTextDark),
+                    textAlign: TextAlign.center,
                     maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(Icons.star_rounded, color: kHoney, size: 13),
-                      const SizedBox(width: 2),
-                      Text(rating.toStringAsFixed(1),
-                        style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700,
-                          fontSize: 11, color: kHoney)),
-                      const SizedBox(width: 4),
-                      Text('($revCount)', style: const TextStyle(
-                        fontFamily: 'Cairo', fontSize: 10, color: kTextMuted)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: kSurfaceWarm,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          '$prodCount منتج',
-                          style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: kTextBrown,
-                          ),
-                        ),
+                  if (rating > 0 || revCount > 0) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.star_rounded, color: kHoney, size: 12),
+                        const SizedBox(width: 2),
+                        Text(rating.toStringAsFixed(1),
+                          style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700,
+                            fontSize: 11, color: kHoney)),
+                        if (revCount > 0) ...[
+                          const SizedBox(width: 3),
+                          Text('($revCount)', style: const TextStyle(
+                            fontFamily: 'Cairo', fontSize: 10, color: kTextMuted)),
+                        ],
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: kSurfaceWarm,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      prodCount > 0 ? '$prodCount منتج' : 'متجر جديد',
+                      style: const TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: kTextBrown,
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -1292,12 +1366,13 @@ class _SearchOverlayState extends State<_SearchOverlay> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: imgUrl != null && imgUrl.isNotEmpty
-                                  ? ClipRRect(
+                                  ? NetImage(
+                                      url: imgUrl,
+                                      width: 44,
+                                      height: 44,
+                                      fit: BoxFit.cover,
                                       borderRadius: BorderRadius.circular(10),
-                                      child: Image.network(imgUrl,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) =>
-                                              const Center(child: Text('🍯'))))
+                                    )
                                   : const Center(
                                       child: Text('🍯',
                                           style: TextStyle(fontSize: 20))),
@@ -1363,7 +1438,6 @@ class _CategoryStoresSheet extends StatelessWidget {
     final all = st.stores;
     final filtered = all.where((s) {
       final cats = (s['categories'] as List?) ?? [];
-      final storeName = (s['storeName'] as String?) ?? '';
       if (cats.any((c) =>
           (c is String && c.toLowerCase().contains(catName.toLowerCase())) ||
           (c is Map &&
@@ -1452,7 +1526,7 @@ class _CategoryStoresSheet extends StatelessWidget {
                               Navigator.pop(context);
                               context
                                   .read<AppState>()
-                                  .openStore(s['id'] as String);
+                                  .openStoreWithData(s.cast<String, dynamic>());
                             },
                             child: Container(
                               decoration: BoxDecoration(

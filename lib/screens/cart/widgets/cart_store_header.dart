@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../theme/colors.dart';
 import '../../../widgets/widgets.dart';
@@ -136,12 +137,19 @@ class _StoreLogo extends StatelessWidget {
     if (logoUrl != null && logoUrl!.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: Image.network(
-          logoUrl!,
+        child: CachedNetworkImage(
+          imageUrl: NetImage.optimizeCloudinaryUrl(
+                logoUrl!, width: 104, height: 104) ??
+              logoUrl!,
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
+          memCacheWidth: 104,
+          memCacheHeight: 104,
+          maxWidthDiskCache: 104,
+          maxHeightDiskCache: 104,
+          placeholder: (_, __) => StoreLogoWidget(storeName: storeName, size: size),
+          errorWidget: (_, __, ___) =>
               StoreLogoWidget(storeName: storeName, size: size),
         ),
       );

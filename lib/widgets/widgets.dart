@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../theme/colors.dart';
 
@@ -139,6 +140,72 @@ class SkeletonFeaturedCard extends StatelessWidget {
       ],
     ),
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SkeletonCategoryRow – shimmer placeholder for the categories section
+// ─────────────────────────────────────────────────────────────────────────────
+class SkeletonCategoryRow extends StatelessWidget {
+  const SkeletonCategoryRow({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section title skeleton
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              ShimmerBox(
+                width: 3, height: 36,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ShimmerBox(width: 84, height: 14, borderRadius: BorderRadius.circular(6)),
+                  const SizedBox(height: 5),
+                  ShimmerBox(width: 130, height: 10, borderRadius: BorderRadius.circular(5)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        // Category chips skeleton row
+        SizedBox(
+          height: 120,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            physics: const NeverScrollableScrollPhysics(),
+            reverse: true,
+            itemCount: 5,
+            itemBuilder: (_, __) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              child: Column(
+                children: [
+                  ShimmerBox(
+                    width: 74, height: 74,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  const SizedBox(height: 8),
+                  ShimmerBox(
+                    width: 60, height: 11,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -525,26 +592,54 @@ class NetImage extends StatelessWidget {
     this.fallback     = '🍯',
   });
 
+  static String? optimizeCloudinaryUrl(
+    String? url, {
+    int? width,
+    int? height,
+    String crop = 'fill',
+  }) {
+    final safeUrl = url?.trim();
+    if (safeUrl == null || safeUrl.isEmpty || !safeUrl.startsWith('http')) {
+      return safeUrl;
+    }
+    if (!safeUrl.contains('res.cloudinary.com') || !safeUrl.contains('/image/upload/')) {
+      return safeUrl;
+    }
+    final transforms = <String>[
+      'f_auto',
+      'q_auto:good',
+    ];
+    if (width != null) transforms.add('w_$width');
+    if (height != null) transforms.add('h_$height');
+    if (width != null || height != null) transforms.add('c_$crop');
+    return safeUrl.replaceFirst('/image/upload/', '/image/upload/${transforms.join(',')}/');
+  }
+
   @override
   Widget build(BuildContext context) {
-    Widget img;
-    if (url != null && url!.startsWith('http')) {
-      // cacheWidth/cacheHeight decode image at display size → reduces memory 4-8×
-      final cw = width  != null ? (width!  * 2).toInt() : null;
-      final ch = height != null ? (height! * 2).toInt() : null;
-      img = Image.network(
-        url!,
-        width: width, height: height, fit: fit,
-        cacheWidth:  cw,
-        cacheHeight: ch,
-        errorBuilder: (_, __, ___) => _placeholder(),
-        loadingBuilder: (_, child, prog) =>
-            prog == null ? child : _shimmer(),
-      );
-    } else {
-      img = _placeholder();
+    final safeUrl = url?.trim();
+    if (safeUrl == null || safeUrl.isEmpty || !safeUrl.startsWith('http')) {
+      return _placeholder();
     }
-
+    final optimizedUrl = optimizeCloudinaryUrl(
+      safeUrl,
+      width: width?.round(),
+      height: height?.round(),
+    );
+    Widget img = CachedNetworkImage(
+      imageUrl: optimizedUrl ?? safeUrl,
+      width: width,
+      height: height,
+      fit: fit,
+      placeholder: (_, __) => _shimmer(),
+      errorWidget: (_, __, ___) => _placeholder(),
+      fadeInDuration: const Duration(milliseconds: 120),
+      fadeOutDuration: const Duration(milliseconds: 80),
+      memCacheWidth: width != null ? (width! * 2).toInt() : null,
+      memCacheHeight: height != null ? (height! * 2).toInt() : null,
+      maxWidthDiskCache: width != null ? (width! * 2).toInt() : null,
+      maxHeightDiskCache: height != null ? (height! * 2).toInt() : null,
+    );
     if (borderRadius != null) {
       img = ClipRRect(borderRadius: borderRadius!, child: img);
     }

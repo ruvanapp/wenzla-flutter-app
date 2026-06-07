@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -134,7 +135,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
               ),
             )
           : null,
-      body: st.loadingStore
+      body: st.loadingStore && !hasStoreData
           ? const _StoreLoadingState()
           : !hasStoreData
               ? EmptyState(
@@ -197,8 +198,14 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
               children: [
                 // Cover image or gradient fallback
                 coverUrl != null
-                    ? Image.network(coverUrl, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _heroBg())
+                    ? CachedNetworkImage(
+                        imageUrl: NetImage.optimizeCloudinaryUrl(
+                              coverUrl, width: 1200, height: 440) ??
+                            coverUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => _heroBg(),
+                        errorWidget: (_, __, ___) => _heroBg(),
+                      )
                     : _heroBg(),
                 // Darkening overlay
                 const DecoratedBox(
@@ -229,9 +236,20 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(14),
                           child: logoUrl != null
-                              ? Image.network(logoUrl, fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
-                                      StoreLogoWidget(storeName: name, size: 72))
+                              ? CachedNetworkImage(
+                                  imageUrl: NetImage.optimizeCloudinaryUrl(
+                                        logoUrl, width: 144, height: 144) ??
+                                      logoUrl,
+                                  fit: BoxFit.cover,
+                                  memCacheWidth: 144,
+                                  memCacheHeight: 144,
+                                  maxWidthDiskCache: 144,
+                                  maxHeightDiskCache: 144,
+                                  placeholder: (_, __) =>
+                                      StoreLogoWidget(storeName: name, size: 72),
+                                  errorWidget: (_, __, ___) =>
+                                      StoreLogoWidget(storeName: name, size: 72),
+                                )
                               : StoreLogoWidget(storeName: name, size: 72),
                         ),
                       ),
@@ -386,7 +404,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
 
         // ── 4. Tab content as flat slivers — NO nested scroll ────────────────
         if (_selectedTab == 0)
-          ..._productSlivers(context, products)
+          ..._productSlivers(context, products, st.loadingStore)
         else if (_selectedTab == 1)
           ..._infoSlivers(store)
         else
@@ -400,7 +418,32 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
 
   // ── Tab 0: Products ────────────────────────────────────────────────────────
   List<Widget> _productSlivers(
-      BuildContext context, List<dynamic> products) {
+      BuildContext context, List<dynamic> products, bool loading) {
+    if (products.isEmpty && loading) {
+      // Show shimmer grid skeleton while products are loading
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.all(12),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 0.72,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (_, __) => Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F0E8),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              childCount: 6,
+            ),
+          ),
+        ),
+      ];
+    }
     if (products.isEmpty) {
       return [
         const SliverFillRemaining(
@@ -630,7 +673,9 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
       BuildContext context, Map<String, dynamic> p) {
     final name   = (p['name']     as String?) ?? '';
     final price  = double.tryParse(p['price']?.toString() ?? '0') ?? 0;
+    final oldPrice = double.tryParse(p['oldPrice']?.toString() ?? '');
     final imgUrl = (p['imageUrl'] as String?);
+    final displayRating = (p['displayRating'] as num?)?.toDouble();
     final st = context.watch<AppState>();
     final cartIndex = st.cart.indexWhere((item) => (item as Map)['id'] == p['id']);
     final cartQty = cartIndex >= 0
@@ -743,7 +788,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
               child: ClipRRect(
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(16)),
-                child: NetImage(url: imgUrl, fit: BoxFit.cover),
+                child: NetImage(url: imgUrl, width: 360, height: 260, fit: BoxFit.cover),
               ),
             ),
             // Text section fills remaining card space
@@ -763,6 +808,25 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
                           fontSize:    12,
                           color:       kTextDark,
                         )),
+                    if (displayRating != null)
+                      Row(
+                        children: [
+                          const Icon(Icons.star_rounded, color: kHoney, size: 12),
+                          const SizedBox(width: 2),
+                          Text(displayRating.toStringAsFixed(1),
+                            style: const TextStyle(fontFamily: 'Cairo',
+                              fontWeight: FontWeight.w600, fontSize: 10, color: kTextMuted)),
+                        ],
+                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (oldPrice != null && oldPrice > price)
+                          Text('${oldPrice.toStringAsFixed(0)} ج.م',
+                            style: const TextStyle(
+                              fontFamily: 'Cairo', fontSize: 10, color: kTextMuted,
+                              decoration: TextDecoration.lineThrough,
+                              decorationColor: kTextMuted)),
                     Row(children: [
                       Expanded(
                         child: Text('${price.toStringAsFixed(0)} ج.م',
@@ -841,6 +905,8 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
                           ),
                         ),
                     ]),
+                      ],
+                    ),
                   ],
                 ),
               ),

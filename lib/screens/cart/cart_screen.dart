@@ -734,6 +734,8 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
 
   Future<void> _submit() async {
     if (_submitting || widget.state.checkingOut) return;
+    debugPrint('[CHECKOUT] Checkout button pressed');
+    debugPrint('[CHECKOUT] JWT token exists? ${((widget.state.token ?? '').isNotEmpty) ? 'yes' : 'no'}');
     final name  = _nameCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
     final addr  = _addrCtrl.text.trim();
@@ -745,23 +747,44 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
     final walletBal = widget.state.walletBalance;
     final cartTot   = widget.state.cartTotal;
     final walletAmt = _useWallet ? walletBal.clamp(0.0, cartTot) : 0.0;
-    final ok = await widget.state.checkout(
-      name:        name,
-      phone:       phone,
-      address:     addr,
-      governorate: _governorate!,
-      notes:       _noteCtrl.text.trim(),
-      useWallet:   _useWallet && walletAmt > 0,
-      walletAmount: walletAmt,
-    );
-    if (!mounted) return;
-    setState(() => _submitting = false);
-    if (ok) {
-      Navigator.pop(context); // close sheet
-      _snack('تم تأكيد طلبك بنجاح ✓ 🎉', isError: false);
-      widget.state.showScreen(AppScreen.orders, bottomIndex: 1);
-    } else {
+    try {
+      final ok = await widget.state.checkout(
+        name:        name,
+        phone:       phone,
+        address:     addr,
+        governorate: _governorate!,
+        notes:       _noteCtrl.text.trim(),
+        useWallet:   _useWallet && walletAmt > 0,
+        walletAmount: walletAmt,
+      );
+      debugPrint('[CHECKOUT] checkout() returned $ok');
+      if (!mounted) return;
+      if (ok) {
+        Navigator.pop(context); // close sheet
+        _snack('تم تأكيد طلبك بنجاح ✓ 🎉', isError: false);
+        widget.state.showScreen(AppScreen.orders, bottomIndex: 1);
+        return;
+      }
+      final sessionExpired = widget.state.consumeCheckoutSessionExpired();
+      if (sessionExpired) {
+        _snack('انتهت صلاحية الجلسة، يرجى تسجيل الدخول مرة أخرى', isError: true);
+        await widget.state.forceLogoutToLogin();
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+        return;
+      }
       _snack('حدث خطأ، يرجى المحاولة مرة أخرى', isError: true);
+    } catch (e, st) {
+      debugPrint('[CHECKOUT] checkout exception: $e');
+      debugPrintStack(stackTrace: st);
+      if (mounted) {
+        _snack('حدث خطأ، يرجى المحاولة مرة أخرى', isError: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
     }
   }
 
