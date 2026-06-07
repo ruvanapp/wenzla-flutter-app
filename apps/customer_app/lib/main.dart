@@ -30,9 +30,9 @@ const _kOrderGroupKey = 'com.wenzla.customer.order_updates';
 @pragma('vm:entry-point')
 Future<void> _bgHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  // Show a local notification for data-only background messages
-  // (FCM auto-displays notification-payload messages; this covers data-only ones)
   final data = message.data;
+  final hasRemoteNotification = message.notification != null;
+  if (hasRemoteNotification) return;
   final title = message.notification?.title ?? data['title'] as String?;
   final body  = message.notification?.body  ?? data['body']  as String?;
   if (title == null && body == null) return;

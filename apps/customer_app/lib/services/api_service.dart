@@ -33,27 +33,32 @@ class ApiService {
 
   // ── Public methods (unchanged signature) ─────────────────────────────────────
 
-  Future<dynamic> get(String path, {bool auth = false}) =>
+  Future<dynamic> get(
+    String path, {
+    bool auth = false,
+    String? traceLabel,
+    void Function(int statusCode)? onStatusCode,
+  }) =>
       _request(() => http.get(
             Uri.parse('$kApiUrl$path'),
             headers: _headers(auth: auth),
-          ));
+          ), traceLabel: traceLabel, onStatusCode: onStatusCode);
 
   Future<dynamic> post(String path, Map<String, dynamic> body,
-          {bool auth = false}) =>
+          {bool auth = false, String? traceLabel, void Function(int statusCode)? onStatusCode}) =>
       _request(() => http.post(
             Uri.parse('$kApiUrl$path'),
             headers: _headers(auth: auth),
             body: jsonEncode(body),
-          ));
+          ), traceLabel: traceLabel, onStatusCode: onStatusCode);
 
   Future<dynamic> patch(String path, Map<String, dynamic> body,
-          {bool auth = false}) =>
+          {bool auth = false, String? traceLabel, void Function(int statusCode)? onStatusCode}) =>
       _request(() => http.patch(
             Uri.parse('$kApiUrl$path'),
             headers: _headers(auth: auth),
             body: jsonEncode(body),
-          ));
+          ), traceLabel: traceLabel, onStatusCode: onStatusCode);
 
   Future<dynamic> postMultipart(
     String path, {
@@ -108,30 +113,83 @@ class ApiService {
   Future<dynamic> _request(
     Future<http.Response> Function() call, {
     int attempt = 0,
+    String? traceLabel,
+    void Function(int statusCode)? onStatusCode,
   }) async {
     try {
+      if (traceLabel != null && attempt == 0) {
+        debugPrint('[$traceLabel] API request started');
+      }
       final res = await call().timeout(_kTimeout);
+      onStatusCode?.call(res.statusCode);
+      if (traceLabel != null) {
+        debugPrint('[$traceLabel] API response received');
+        debugPrint('[$traceLabel] HTTP status code: ${res.statusCode}');
+      }
       return _parse(res);
     } on TimeoutException {
+      if (traceLabel != null) {
+        debugPrint('[$traceLabel] API request failed: timeout');
+      }
       _logError('TIMEOUT', attempt);
-      return _retryOrNull(call, attempt);
+      return _retryOrNull(
+        call,
+        attempt,
+        traceLabel: traceLabel,
+        onStatusCode: onStatusCode,
+      );
     } on HttpException catch (e) {
+      if (traceLabel != null) {
+        debugPrint('[$traceLabel] API request failed: HttpException ${e.message}');
+      }
       // Covers "Connection closed while receiving data" and similar
       _logError('HTTP: ${e.message}', attempt);
-      return _retryOrNull(call, attempt);
+      return _retryOrNull(
+        call,
+        attempt,
+        traceLabel: traceLabel,
+        onStatusCode: onStatusCode,
+      );
     } on SocketException catch (e) {
+      if (traceLabel != null) {
+        debugPrint('[$traceLabel] API request failed: SocketException ${e.message}');
+      }
       // No network, DNS failure, connection refused
       _logError('SOCKET: ${e.message}', attempt);
-      return _retryOrNull(call, attempt);
+      return _retryOrNull(
+        call,
+        attempt,
+        traceLabel: traceLabel,
+        onStatusCode: onStatusCode,
+      );
     } on HandshakeException catch (e) {
+      if (traceLabel != null) {
+        debugPrint('[$traceLabel] API request failed: HandshakeException ${e.message}');
+      }
       // TLS/SSL failures
       _logError('TLS: ${e.message}', attempt);
-      return _retryOrNull(call, attempt);
+      return _retryOrNull(
+        call,
+        attempt,
+        traceLabel: traceLabel,
+        onStatusCode: onStatusCode,
+      );
     } on http.ClientException catch (e) {
+      if (traceLabel != null) {
+        debugPrint('[$traceLabel] API request failed: ClientException ${e.message}');
+      }
       // http package wraps some OS-level errors here
       _logError('CLIENT: ${e.message}', attempt);
-      return _retryOrNull(call, attempt);
+      return _retryOrNull(
+        call,
+        attempt,
+        traceLabel: traceLabel,
+        onStatusCode: onStatusCode,
+      );
     } catch (e) {
+      if (traceLabel != null) {
+        debugPrint('[$traceLabel] API request failed: unexpected $e');
+      }
       // Unexpected error (e.g. JSON parse failure) — do NOT retry
       _logError('UNEXPECTED: $e', attempt);
       return null;
@@ -141,6 +199,7 @@ class ApiService {
   Future<dynamic> _retryOrNull(
     Future<http.Response> Function() call,
     int attempt,
+    {String? traceLabel, void Function(int statusCode)? onStatusCode}
   ) async {
     if (attempt >= _kMaxAttempts - 1) {
       debugPrint('[API] All $_kMaxAttempts attempts failed — returning null.');
@@ -151,7 +210,12 @@ class ApiService {
     debugPrint('[API] Retrying in ${delay.inSeconds}s '
         '(attempt ${attempt + 2}/$_kMaxAttempts)…');
     await Future<void>.delayed(delay);
-    return _request(call, attempt: attempt + 1);
+    return _request(
+      call,
+      attempt: attempt + 1,
+      traceLabel: traceLabel,
+      onStatusCode: onStatusCode,
+    );
   }
 
   void _logError(String msg, int attempt) {
