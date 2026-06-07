@@ -86,7 +86,7 @@ class CartStoreHeader extends StatelessWidget {
                           color: kHoneyLight, size: 14),
                       const SizedBox(width: 4),
                       Text(
-                        'توصيل عادةً خلال 30-45 دقيقة',
+                        'توصيل خلال 3 أيام',
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.65),
                           fontSize: 11,

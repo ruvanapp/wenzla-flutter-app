@@ -149,7 +149,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             SizedBox(width: 16),
                             TrustBadge(icon: Icons.eco_rounded,            label: 'طبيعي 100%', color: Color(0xFF2E7D32)),
                             SizedBox(width: 16),
-                            TrustBadge(icon: Icons.local_shipping_rounded, label: 'توصيل سريع', color: Color(0xFF0277BD)),
+                            TrustBadge(icon: Icons.local_shipping_rounded, label: 'توصيل خلال 3 أيام', color: Color(0xFF0277BD)),
                           ],
                         ),
                         const SizedBox(height: 16),

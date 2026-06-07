@@ -540,6 +540,33 @@ class AppState extends ChangeNotifier {
     (s, i) => s + (double.tryParse(i['price']?.toString() ?? '0') ?? 0) * ((i['qty'] as int?) ?? 1),
   );
 
+  // ── Selected shipping zone (synced from checkout sheet) ─────────────────────
+  String? _selectedShippingZoneId;
+  double? _selectedShippingFee;
+  String? _selectedShippingZoneName;
+
+  String? get selectedShippingZoneId => _selectedShippingZoneId;
+  double? get selectedShippingFee => _selectedShippingFee;
+  String? get selectedShippingZoneName => _selectedShippingZoneName;
+
+  void setSelectedShippingZone({
+    required String id,
+    required double fee,
+    String? name,
+  }) {
+    _selectedShippingZoneId = id;
+    _selectedShippingFee = fee;
+    _selectedShippingZoneName = name;
+    notifyListeners();
+  }
+
+  void clearSelectedShippingZone() {
+    _selectedShippingZoneId = null;
+    _selectedShippingFee = null;
+    _selectedShippingZoneName = null;
+    notifyListeners();
+  }
+
   // ── Checkout ──────────────────────────────────────────────────────────────────
   bool _checkingOut = false;
   bool get checkingOut => _checkingOut;

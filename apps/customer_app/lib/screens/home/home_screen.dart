@@ -871,7 +871,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       borderRadius: BorderRadius.circular(18),
                     ),
                     child: const Text(
-                      'توصيل سريع • جودة مختارة',
+                      'توصيل خلال 3 أيام • جودة مختارة',
                       style: TextStyle(
                         fontFamily: 'Cairo',
                         fontSize: 10,

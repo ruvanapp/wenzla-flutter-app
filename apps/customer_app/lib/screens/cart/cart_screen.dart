@@ -24,8 +24,6 @@ class _CartScreenState extends State<CartScreen> {
       'السلام عليكم، محتاج مساعدة في تطبيق سوق العسل';
   double _minimumOrder = 0;
 
-  static const _deliveryFee = 0.0; // free delivery for now
-
   @override
   void initState() {
     super.initState();
@@ -92,7 +90,7 @@ class _CartScreenState extends State<CartScreen> {
             ),
             cart: cartItems,
             state: st,
-            deliveryFee: _deliveryFee,
+            deliveryFee: st.selectedShippingFee, // null until governorate is picked
             couponDiscount: _couponDiscount,
             onDiscountChanged: (d) => setState(() => _couponDiscount = d),
             supportWhatsappNumber: _supportWhatsappNumber,
@@ -210,7 +208,7 @@ class _CartEmptyBody extends StatelessWidget {
 class _CartContent extends StatelessWidget {
   final List<Map<String, dynamic>> cart;
   final AppState state;
-  final double deliveryFee;
+  final double? deliveryFee; // null = no governorate selected yet
   final double couponDiscount;
   final ValueChanged<double> onDiscountChanged;
   final String supportWhatsappNumber;
@@ -277,7 +275,8 @@ class _CartContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total = state.cartTotal + deliveryFee - couponDiscount;
+    final effectiveFee = deliveryFee ?? 0.0;
+    final total = state.cartTotal + effectiveFee - couponDiscount;
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return Stack(
@@ -748,6 +747,12 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
       setState(() {
         _zones = res.cast<Map<String, dynamic>>();
         _zonesLoading = false;
+        // Restore previously-selected zone if any (e.g. reopening sheet)
+        final restoredId = widget.state.selectedShippingZoneId;
+        if (restoredId != null && _zones.any((z) => z['id'] == restoredId)) {
+          _selectedZoneId = restoredId;
+          _shippingFee = widget.state.selectedShippingFee ?? 0;
+        }
       });
     } catch (_) {
       if (mounted) setState(() => _zonesLoading = false);
@@ -761,14 +766,24 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
         _shippingFee = 0;
         _shippingDisabled = false;
       });
+      widget.state.clearSelectedShippingZone();
       return;
     }
     final zone = _zones.firstWhere((z) => z['id'] == zoneId, orElse: () => {});
+    final fee = (zone['fee'] is num)
+        ? (zone['fee'] as num).toDouble()
+        : double.tryParse('${zone['fee']}') ?? 0;
     setState(() {
       _selectedZoneId = zoneId;
-      _shippingFee = (zone['fee'] is num) ? (zone['fee'] as num).toDouble() : double.tryParse('${zone['fee']}') ?? 0;
+      _shippingFee = fee;
       _shippingDisabled = false;
     });
+    // Sync to AppState so cart screen totals reflect the selection
+    widget.state.setSelectedShippingZone(
+      id: zoneId,
+      fee: fee,
+      name: zone['name'] as String?,
+    );
   }
 
   @override
