@@ -586,11 +586,26 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
   bool _useWallet  = false;
   List<Map<String, dynamic>> _zones = [];
   bool _zonesLoading = true;
+  double _minimumOrder = 0;
 
   @override
   void initState() {
     super.initState();
     _loadShippingZones();
+    _loadMinimumOrder();
+  }
+
+  Future<void> _loadMinimumOrder() async {
+    try {
+      final api = ApiService(token: widget.state.token);
+      final res = await api.get('/customer/settings/minimum-order');
+      if (!mounted || res is! Map) return;
+      setState(() {
+        _minimumOrder = (res['amount'] is num)
+            ? (res['amount'] as num).toDouble()
+            : double.tryParse('${res['amount']}') ?? 0;
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadShippingZones() async {
@@ -751,10 +766,41 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                       useWallet: _useWallet,
                       onToggle: (val) => setState(() => _useWallet = val),
                     ),
+                    // Minimum order warning
+                    if (_minimumOrder > 0 && widget.state.cartTotal < _minimumOrder) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF3CD),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFFFD93D)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.warning_amber_rounded, color: Color(0xFFD4A437), size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'الحد الأدنى للطلب هو ${_minimumOrder.toStringAsFixed(0)} جنيه\n'
+                                'أضف ${(_minimumOrder - widget.state.cartTotal).toStringAsFixed(0)} جنيه لإتمام الطلب',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: Color(0xFF856404),
+                                  fontFamily: 'Cairo',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 28),
                     // Confirm button
                     _ConfirmButton(
                       loading: _submitting || widget.state.checkingOut,
+                      disabled: _minimumOrder > 0 && widget.state.cartTotal < _minimumOrder,
                       onTap: _submit,
                     ),
                     const SizedBox(height: 12),
@@ -807,6 +853,11 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
 
   Future<void> _submit() async {
     if (_submitting || widget.state.checkingOut) return;
+    // Minimum order check
+    if (_minimumOrder > 0 && widget.state.cartTotal < _minimumOrder) {
+      _snack('الحد الأدنى للطلب هو ${_minimumOrder.toStringAsFixed(0)} جنيه', isError: true);
+      return;
+    }
     debugPrint('[CHECKOUT] Checkout button pressed');
     debugPrint('[CHECKOUT] JWT token exists? ${((widget.state.token ?? '').isNotEmpty) ? 'yes' : 'no'}');
     final name  = _nameCtrl.text.trim();
@@ -1010,28 +1061,30 @@ class _WalletPaySection extends StatelessWidget {
 
 class _ConfirmButton extends StatelessWidget {
   final bool loading;
+  final bool disabled;
   final VoidCallback? onTap;
 
-  const _ConfirmButton({required this.loading, this.onTap});
+  const _ConfirmButton({required this.loading, this.disabled = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final inactive = loading || disabled;
     return TapScaleWidget(
-      onTap: loading ? null : onTap,
+      onTap: inactive ? null : onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         height: 56,
         decoration: BoxDecoration(
-          gradient: loading
+          gradient: inactive
               ? null
               : const LinearGradient(
                   colors: [kHoneyLight, kHoney, kDarkHoney],
                   begin: Alignment.topRight,
                   end: Alignment.bottomLeft,
                 ),
-          color: loading ? kBorder : null,
+          color: inactive ? kBorder : null,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: loading
+          boxShadow: inactive
               ? null
               : [
                   BoxShadow(

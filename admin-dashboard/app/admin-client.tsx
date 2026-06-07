@@ -354,6 +354,8 @@ export default function AdminClient() {
   const [shippingSaving, setShippingSaving] = useState(false);
   const [shippingNewName, setShippingNewName] = useState('');
   const [shippingNewFee, setShippingNewFee] = useState('');
+  const [minimumOrder, setMinimumOrder] = useState('0');
+  const [minimumOrderSaving, setMinimumOrderSaving] = useState(false);
   const [walletRechargeRequests, setWalletRechargeRequests] = useState<WalletRechargeRequest[]>([]);
   const [walletRechargeActionLoadingId, setWalletRechargeActionLoadingId] = useState<string | null>(null);
   const [selectedRechargeRequest, setSelectedRechargeRequest] = useState<WalletRechargeRequest | null>(null);
@@ -467,6 +469,7 @@ export default function AdminClient() {
   useEffect(() => {
     loadSupportWhatsapp();
     loadShippingZones();
+    loadMinimumOrder();
   }, []);
 
   // Auto-dismiss success messages after 4.5 s
@@ -922,6 +925,29 @@ export default function AdminClient() {
       setMessage('تم حذف المحافظة بنجاح');
     } catch {
       setMessage('فشل حذف المحافظة');
+    }
+  }
+
+  // ── Minimum Order ────────────────────────────────────────────────────────
+  async function loadMinimumOrder() {
+    try {
+      const res = await api<{ amount: number }>('/admin/settings/minimum-order');
+      setMinimumOrder(String(res?.amount ?? 0));
+    } catch {}
+  }
+
+  async function saveMinimumOrder() {
+    setMinimumOrderSaving(true);
+    try {
+      await api('/admin/settings/minimum-order', {
+        method: 'PUT',
+        body: JSON.stringify({ amount: Number(minimumOrder) || 0 }),
+      });
+      setMessage('تم حفظ الحد الأدنى للطلب بنجاح ✓');
+    } catch {
+      setMessage('فشل حفظ الحد الأدنى للطلب');
+    } finally {
+      setMinimumOrderSaving(false);
     }
   }
 
@@ -2836,6 +2862,22 @@ export default function AdminClient() {
                     </div>
                     <button className="action-btn" onClick={saveCommission} style={{ flexShrink: 0, background: 'var(--brown)', color: 'var(--cream)', border: 'none' }}>
                       💾 حفظ النسبة
+                    </button>
+                  </div>
+                </div>
+
+                <div className="chart-panel">
+                  <h3 className="chart-panel-title">📦 الحد الأدنى للطلب</h3>
+                  <p style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', margin: '8px 0 12px' }}>لن يتمكن العميل من إتمام الطلب إذا كان المجموع أقل من هذا المبلغ (0 = بدون حد أدنى)</p>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>المبلغ (ج.م)</label>
+                      <input type="number" value={minimumOrder} onChange={e => setMinimumOrder(e.target.value)} min="0"
+                        style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 16, background: 'var(--paper)', color: 'var(--brown)' }} />
+                    </div>
+                    <button className="action-btn" onClick={saveMinimumOrder} disabled={minimumOrderSaving}
+                      style={{ flexShrink: 0, background: 'var(--brown)', color: 'var(--cream)', border: 'none', opacity: minimumOrderSaving ? 0.65 : 1, cursor: minimumOrderSaving ? 'wait' : 'pointer' }}>
+                      {minimumOrderSaving ? '⏳ جاري الحفظ…' : '💾 حفظ الحد الأدنى'}
                     </button>
                   </div>
                 </div>
