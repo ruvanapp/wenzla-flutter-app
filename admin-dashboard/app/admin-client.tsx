@@ -468,10 +468,11 @@ export default function AdminClient() {
   }, []);
 
   useEffect(() => {
+    if (!authorized) return;
     loadSupportWhatsapp();
     loadShippingZones();
     loadMinimumOrder();
-  }, []);
+  }, [authorized]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-dismiss success messages after 4.5 s
   useEffect(() => {
