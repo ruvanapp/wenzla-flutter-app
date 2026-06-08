@@ -528,6 +528,15 @@ export default function AdminClient() {
   const [mounted, setMounted] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('wenzla_admin_sidebar_collapsed') === '1';
+  });
+  // Phase 3: Toast queue
+  const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error' | 'info' | 'warning'; text: string }>>([]);
+  // Phase 3: Orders table sort
+  const [ordersSortKey, setOrdersSortKey] = useState<string>('createdAt');
+  const [ordersSortDir, setOrdersSortDir] = useState<'asc' | 'desc'>('desc');
   const [token, setToken] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -889,11 +898,24 @@ export default function AdminClient() {
     await refreshAll();
   }
 
+  const pushToast = useCallback((type: 'success' | 'error' | 'info' | 'warning', text: string) => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, type, text }]);
+    window.setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  }, []);
+
   const toast = {
-    success: (msg: string) => setMessage(msg),
-    error: (msg: string) => setMessage(msg),
-    info: (msg: string) => setMessage(msg),
+    success: (msg: string) => { setMessage(msg); pushToast('success', msg); },
+    error:   (msg: string) => { setMessage(msg); pushToast('error', msg); },
+    info:    (msg: string) => { setMessage(msg); pushToast('info', msg); },
+    warning: (msg: string) => { setMessage(msg); pushToast('warning', msg); },
   };
+
+  // Persist sidebar collapse
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('wenzla_admin_sidebar_collapsed', sidebarCollapsed ? '1' : '0');
+  }, [sidebarCollapsed]);
 
   async function editMerchantInfo(id: string) {
     try {
@@ -1877,24 +1899,34 @@ export default function AdminClient() {
     <div className="dash-shell" dir="rtl">
 
       {/* ── Sidebar ── */}
-      <aside className={`dash-sidebar${sidebarOpen ? ' open' : ''}`}>
+      <aside className={`dash-sidebar${sidebarOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`}>
         <div className="sb-logo">
-          <p className="sb-logo-title">🍯 سوق العسل</p>
-          <p className="sb-logo-sub">لوحة تحكم المشرف</p>
+          <p className="sb-logo-title">🍯 {sidebarCollapsed ? '' : 'سوق العسل'}</p>
+          {!sidebarCollapsed && <p className="sb-logo-sub">لوحة تحكم المشرف</p>}
+          <button
+            className="sb-collapse-btn"
+            onClick={() => setSidebarCollapsed(c => !c)}
+            title={sidebarCollapsed ? 'فتح' : 'طي'}
+            style={{ position: 'absolute', top: 12, left: 12 }}
+          >
+            {sidebarCollapsed ? '◀' : '▶'}
+          </button>
         </div>
 
         <nav className="sb-nav">
           {NAV_ITEMS.map(group => (
             <div key={group.group}>
-              <div className="sb-group-label">{group.group}</div>
+              {!sidebarCollapsed && <div className="sb-group-label sb-section-label">{group.group}</div>}
               {group.items.map(item => (
                 <button
                   key={item.key}
                   className={`sb-item${activePanel === item.key ? ' active' : ''}`}
                   onClick={() => { setActivePanel(item.key); setSidebarOpen(false); }}
+                  data-label={item.label}
+                  title={sidebarCollapsed ? item.label : undefined}
                 >
                   <span className="sb-icon">{item.icon}</span>
-                  {item.label}
+                  <span>{item.label}</span>
                   {item.key === 'orders' && orderStats.pending > 0 && (
                     <span className="sb-badge">{orderStats.pending}</span>
                   )}
@@ -1905,7 +1937,7 @@ export default function AdminClient() {
         </nav>
 
         <div className="sb-footer">
-          سوق العسل · نظام الإدارة
+          {sidebarCollapsed ? '🍯' : 'سوق العسل · نظام الإدارة'}
         </div>
       </aside>
 
@@ -1967,13 +1999,185 @@ export default function AdminClient() {
              ════════════════════════════════════════════════════════ */}
           {activePanel === 'overview' && (
             <div>
-              <div className="pg-header">
-                <div>
-                  <h2 className="pg-title">نظرة عامة على السوق</h2>
-                  <p className="pg-subtitle">ملخص شامل لأداء المنصة</p>
+              {/* ── Executive hero ───────────────────────────────────────── */}
+              <div className="exec-hero">
+                <div className="exec-hero-text">
+                  <div className="exec-hero-greeting">{(() => {
+                    const h = new Date().getHours();
+                    if (h < 12) return 'صباح الخير 🌅';
+                    if (h < 17) return 'مساء النور ☀️';
+                    return 'مساء الخير 🌙';
+                  })()}</div>
+                  <h1 className="exec-hero-title">لوحة تحكم سوق العسل</h1>
+                  <p className="exec-hero-sub">إليك نظرة سريعة على أداء المنصة اليوم</p>
                 </div>
-                <div className="pg-actions">
-                  <button className="topbar-btn" onClick={() => { refreshAll(); loadAnalytics(); }}>🔄 تحديث</button>
+                <div className="exec-hero-actions">
+                  <button className="exec-btn-primary" onClick={() => setActivePanel('orders')}>
+                    📦 إدارة الطلبات
+                  </button>
+                  <button className="exec-btn-ghost" onClick={() => { refreshAll(); loadAnalytics(); }}>
+                    🔄 تحديث
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Summary cards row ────────────────────────────────────── */}
+              <div className="exec-summary-grid">
+                <div className="exec-summary-card revenue">
+                  <div className="exec-card-label">💵 إيرادات اليوم</div>
+                  <div className="exec-card-value">{formatEGP(overview.revenueToday ?? 0)}</div>
+                  <div className="exec-card-foot">من <strong>{(overview.ordersToday ?? 0).toLocaleString('ar-EG')}</strong> طلب اليوم</div>
+                </div>
+                <div className="exec-summary-card orders">
+                  <div className="exec-card-label">📦 إجمالي الطلبات</div>
+                  <div className="exec-card-value">{overview.orders.toLocaleString('ar-EG')}</div>
+                  <div className="exec-card-foot">إجمالي المبيعات: <strong>{formatEGP(overview.sales)}</strong></div>
+                </div>
+                <div className="exec-summary-card merchants">
+                  <div className="exec-card-label">🏪 التجار النشطون</div>
+                  <div className="exec-card-value">{overview.merchants.toLocaleString('ar-EG')}</div>
+                  <div className="exec-card-foot">{overview.products.toLocaleString('ar-EG')} منتج معتمد</div>
+                </div>
+                <div className="exec-summary-card customers">
+                  <div className="exec-card-label">👥 العملاء</div>
+                  <div className="exec-card-value">{(overview.activeCustomers ?? 0).toLocaleString('ar-EG')}</div>
+                  <div className="exec-card-foot">متوسط الطلب: <strong>{formatEGP(overview.averageOrderValue ?? 0)}</strong></div>
+                </div>
+              </div>
+
+              {/* ── Quick actions ─────────────────────────────────────────── */}
+              <div className="exec-quick-actions">
+                <div className="exec-section-head">
+                  <h3>⚡ إجراءات سريعة</h3>
+                </div>
+                <div className="exec-quick-grid">
+                  <button className="exec-quick-btn" onClick={() => setActivePanel('orders')}>
+                    <span className="qa-icon">📦</span>
+                    <div>
+                      <strong>الطلبات</strong>
+                      <span>{orderStats.pending} في الانتظار</span>
+                    </div>
+                  </button>
+                  <button className="exec-quick-btn" onClick={() => setActivePanel('merchants')}>
+                    <span className="qa-icon">🏪</span>
+                    <div>
+                      <strong>التجار</strong>
+                      <span>إدارة المتاجر</span>
+                    </div>
+                  </button>
+                  <button className="exec-quick-btn" onClick={() => setActivePanel('products')}>
+                    <span className="qa-icon">🛒</span>
+                    <div>
+                      <strong>المنتجات</strong>
+                      <span>{overview.products} منتج</span>
+                    </div>
+                  </button>
+                  <button className="exec-quick-btn" onClick={() => setActivePanel('shipping')}>
+                    <span className="qa-icon">🚚</span>
+                    <div>
+                      <strong>رسوم الشحن</strong>
+                      <span>إدارة المحافظات</span>
+                    </div>
+                  </button>
+                  <button className="exec-quick-btn" onClick={() => setActivePanel('financial')}>
+                    <span className="qa-icon">💰</span>
+                    <div>
+                      <strong>المالية</strong>
+                      <span>العمولات والإعدادات</span>
+                    </div>
+                  </button>
+                  <button className="exec-quick-btn" onClick={() => setActivePanel('notifications')}>
+                    <span className="qa-icon">🔔</span>
+                    <div>
+                      <strong>الإشعارات</strong>
+                      <span>إرسال إشعار جديد</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Top performers + recent activity ─────────────────────── */}
+              <div className="exec-bottom-grid">
+                <div className="exec-list-card">
+                  <div className="exec-section-head">
+                    <h3>🏆 أعلى المتاجر</h3>
+                    <button className="exec-link" onClick={() => setActivePanel('merchants')}>عرض الكل ←</button>
+                  </div>
+                  {topVendors.length === 0 ? (
+                    <div className="exec-empty">لا توجد بيانات بعد</div>
+                  ) : (
+                    <ol className="exec-rank-list">
+                      {topVendors.slice(0, 5).map((v, i) => (
+                        <li key={i}>
+                          <span className="rank-num">{i + 1}</span>
+                          <div className="rank-info">
+                            <strong>{v.storeName ?? 'متجر'}</strong>
+                            <span>{v.totalOrders} طلب</span>
+                          </div>
+                          <span className="rank-amount">{formatEGP(v.totalRevenue)}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+
+                <div className="exec-list-card">
+                  <div className="exec-section-head">
+                    <h3>⭐ أعلى المنتجات</h3>
+                    <button className="exec-link" onClick={() => setActivePanel('products')}>عرض الكل ←</button>
+                  </div>
+                  {topProducts.length === 0 ? (
+                    <div className="exec-empty">لا توجد بيانات بعد</div>
+                  ) : (
+                    <ol className="exec-rank-list">
+                      {topProducts.slice(0, 5).map((p, i) => (
+                        <li key={i}>
+                          <span className="rank-num gold">{i + 1}</span>
+                          <div className="rank-info">
+                            <strong>{p.name ?? 'منتج'}</strong>
+                            <span>{p.totalSold} وحدة</span>
+                          </div>
+                          <span className="rank-amount">{formatEGP(p.totalRevenue)}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+
+                <div className="exec-list-card">
+                  <div className="exec-section-head">
+                    <h3>📋 آخر النشاط</h3>
+                    <button className="exec-link" onClick={() => setActivePanel('activity')}>عرض الكل ←</button>
+                  </div>
+                  {activityLog.length === 0 ? (
+                    <button className="exec-empty exec-empty-clickable" onClick={() => loadActivityLog(1)}>
+                      اضغط للتحميل
+                    </button>
+                  ) : (
+                    <ul className="exec-activity-list">
+                      {activityLog.slice(0, 6).map((a: any) => (
+                        <li key={a.id}>
+                          <span className="act-dot" style={{ background: a.action === 'DELETE' ? '#dc2626' : a.action === 'CREATE' ? '#16a34a' : '#3b82f6' }} />
+                          <div className="act-info">
+                            <strong>{a.adminUser?.name ?? a.actorUsername}</strong>
+                            <span>{a.action} · {a.entityType}</span>
+                          </div>
+                          <span className="act-time">{(() => {
+                            try {
+                              const d = new Date(a.createdAt);
+                              const diff = Date.now() - d.getTime();
+                              const m = Math.floor(diff / 60000);
+                              if (m < 1) return 'الآن';
+                              if (m < 60) return `${m}د`;
+                              const h = Math.floor(m / 60);
+                              if (h < 24) return `${h}س`;
+                              return `${Math.floor(h / 24)}ي`;
+                            } catch { return ''; }
+                          })()}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
 
@@ -2304,11 +2508,51 @@ export default function AdminClient() {
                             />
                           </th>
                           <th>رقم الطلب</th><th>العميل</th><th>الهاتف</th><th>العنوان</th>
-                          <th>المتجر</th><th>الإجمالي</th><th>الدفع</th><th>#</th><th>الحالة</th><th>التاريخ</th><th>إجراءات</th>
+                          <th>المتجر</th>
+                          <th
+                            className={`sortable${ordersSortKey === 'total' ? ' sorted' : ''}`}
+                            onClick={() => {
+                              if (ordersSortKey === 'total') setOrdersSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                              else { setOrdersSortKey('total'); setOrdersSortDir('desc'); }
+                            }}
+                          >
+                            <span className="sort-arrow">{ordersSortKey === 'total' ? (ordersSortDir === 'desc' ? '▼' : '▲') : '⇅'}</span>
+                            الإجمالي
+                          </th>
+                          <th>الدفع</th><th>#</th>
+                          <th
+                            className={`sortable${ordersSortKey === 'status' ? ' sorted' : ''}`}
+                            onClick={() => {
+                              if (ordersSortKey === 'status') setOrdersSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                              else { setOrdersSortKey('status'); setOrdersSortDir('asc'); }
+                            }}
+                          >
+                            <span className="sort-arrow">{ordersSortKey === 'status' ? (ordersSortDir === 'desc' ? '▼' : '▲') : '⇅'}</span>
+                            الحالة
+                          </th>
+                          <th
+                            className={`sortable${ordersSortKey === 'createdAt' ? ' sorted' : ''}`}
+                            onClick={() => {
+                              if (ordersSortKey === 'createdAt') setOrdersSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                              else { setOrdersSortKey('createdAt'); setOrdersSortDir('desc'); }
+                            }}
+                          >
+                            <span className="sort-arrow">{ordersSortKey === 'createdAt' ? (ordersSortDir === 'desc' ? '▼' : '▲') : '⇅'}</span>
+                            التاريخ
+                          </th>
+                          <th>إجراءات</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {fullOrders.map(order => {
+                        {(() => {
+                          const sorted = [...fullOrders].sort((a, b) => {
+                            const dir = ordersSortDir === 'asc' ? 1 : -1;
+                            if (ordersSortKey === 'total') return (Number(a.total) - Number(b.total)) * dir;
+                            if (ordersSortKey === 'status') return String(a.status).localeCompare(String(b.status)) * dir;
+                            if (ordersSortKey === 'createdAt') return (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * dir;
+                            return 0;
+                          });
+                          return sorted.map(order => {
                           const isSelected = selectedOrderIds.has(order.id);
                           return (
                             <tr key={order.id}
@@ -2350,7 +2594,8 @@ export default function AdminClient() {
                               </td>
                             </tr>
                           );
-                        })}
+                        });
+                        })()}
                       </tbody>
                     </table>
                   )}
@@ -5248,6 +5493,24 @@ export default function AdminClient() {
           </div>
         </div>
       )}
+
+      {/* ════════════════════════════════════════════════════════
+          TOAST STACK (Phase 3)
+         ════════════════════════════════════════════════════════ */}
+      <div className="toast-stack">
+        {toasts.map(t => {
+          const iconMap: Record<string, string> = { success: '✓', error: '✕', info: 'ℹ', warning: '⚠' };
+          return (
+            <div key={t.id} className={`toast-item ${t.type}`}>
+              <span className="toast-icon" style={{ color: t.type === 'success' ? '#16a34a' : t.type === 'error' ? '#dc2626' : t.type === 'warning' ? '#d97706' : '#3b82f6' }}>
+                {iconMap[t.type]}
+              </span>
+              <span className="toast-text">{t.text}</span>
+              <button className="toast-close" onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}>✕</button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
