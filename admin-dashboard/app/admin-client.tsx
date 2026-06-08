@@ -577,6 +577,10 @@ export default function AdminClient() {
   const [shippingZones, setShippingZones] = useState<any[]>([]);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingSaving, setShippingSaving] = useState(false);
+  // Phase: Home Promo Card
+  const [promoCard, setPromoCard] = useState({ enabled: false, title: 'عروض اليوم', description: 'خصومات خاصة على منتجات مختارة لفترة محدودة', buttonText: 'تسوق الآن' });
+  const [promoCardSaved, setPromoCardSaved] = useState({ enabled: false, title: 'عروض اليوم', description: 'خصومات خاصة على منتجات مختارة لفترة محدودة', buttonText: 'تسوق الآن' });
+  const [promoCardStatus, setPromoCardStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [shippingNewName, setShippingNewName] = useState('');
   const [shippingNewFee, setShippingNewFee] = useState('');
   const [shippingSearch, setShippingSearch] = useState('');
@@ -733,6 +737,7 @@ export default function AdminClient() {
     loadSupportWhatsapp();
     loadShippingZones();
     loadMinimumOrder();
+    loadPromoCard();
   }, [authorized]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cmd/Ctrl+K to open Global Search
@@ -1374,6 +1379,35 @@ export default function AdminClient() {
       setMinimumOrder(v);
       setMinimumOrderSaved(v);
     } catch {}
+  }
+
+  // ── Home Promo Card ──────────────────────────────────────────────────────
+  async function loadPromoCard() {
+    try {
+      const res = await api<typeof promoCard>('/admin/settings/home-promo-card');
+      if (res) {
+        setPromoCard(res);
+        setPromoCardSaved(res);
+      }
+    } catch {}
+  }
+
+  async function savePromoCard() {
+    setPromoCardStatus('saving');
+    try {
+      await api('/admin/settings/home-promo-card', {
+        method: 'PUT',
+        body: JSON.stringify(promoCard),
+      });
+      setPromoCardSaved(promoCard);
+      setPromoCardStatus('success');
+      window.setTimeout(() => setPromoCardStatus('idle'), 2500);
+      toast.success('تم حفظ كارت العروض ✓');
+    } catch {
+      setPromoCardStatus('error');
+      window.setTimeout(() => setPromoCardStatus('idle'), 4000);
+      toast.error('فشل حفظ كارت العروض');
+    }
   }
 
   async function saveMinimumOrder() {
@@ -4186,6 +4220,71 @@ export default function AdminClient() {
                         <button className="admin-row-btn primary" disabled={!dirty || whatsappSaving} onClick={saveSupportWhatsapp}>
                           💾 حفظ
                         </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Home Promo Card management */}
+                {(() => {
+                  const dirty = JSON.stringify(promoCard) !== JSON.stringify(promoCardSaved);
+                  return (
+                    <div className={`admin-settings-card ${dirty ? 'dirty' : ''}`}>
+                      <div className="admin-settings-card-header">
+                        <span className="icon">🎁</span>
+                        <h3>كارت عروض الرئيسية</h3>
+                        {dirty && <span style={{ fontSize: 10, color: 'var(--gold)', fontWeight: 800 }}>غير محفوظ</span>}
+                      </div>
+                      <div className="admin-settings-card-body">
+                        <p className="helper">يظهر هذا الكارت أعلى الصفحة الرئيسية في تطبيق العميل (تحت البانر). أوقف التفعيل لإخفائه.</p>
+
+                        {/* Toggle */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                          <button
+                            type="button"
+                            onClick={() => setPromoCard(c => ({ ...c, enabled: !c.enabled }))}
+                            style={{
+                              width: 48, height: 26, borderRadius: 14, border: 'none', cursor: 'pointer',
+                              background: promoCard.enabled ? 'var(--gold)' : 'rgba(71,39,21,0.18)',
+                              position: 'relative', transition: 'background .2s', flexShrink: 0,
+                            }}
+                          >
+                            <span style={{
+                              position: 'absolute', top: 3, left: promoCard.enabled ? 25 : 3,
+                              width: 20, height: 20, borderRadius: '50%', background: 'white', transition: 'left .2s',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                            }} />
+                          </button>
+                          <span style={{ fontSize: 12, color: 'var(--brown)', fontWeight: 700 }}>
+                            {promoCard.enabled ? '✓ مفعّل ويظهر للعملاء' : '✕ معطّل (مخفي)'}
+                          </span>
+                        </div>
+
+                        <label>العنوان</label>
+                        <input type="text" value={promoCard.title} onChange={e => setPromoCard(c => ({ ...c, title: e.target.value }))} maxLength={100} placeholder="عروض اليوم" />
+                        <div style={{ height: 10 }} />
+
+                        <label>الوصف</label>
+                        <textarea value={promoCard.description} onChange={e => setPromoCard(c => ({ ...c, description: e.target.value }))} rows={2} maxLength={280} placeholder="خصومات خاصة على منتجات مختارة لفترة محدودة" />
+                        <div style={{ height: 10 }} />
+
+                        <label>نص الزر</label>
+                        <input type="text" value={promoCard.buttonText} onChange={e => setPromoCard(c => ({ ...c, buttonText: e.target.value }))} maxLength={30} placeholder="تسوق الآن" />
+
+                        {/* Preview */}
+                        <div style={{ marginTop: 14, padding: '14px 16px', borderRadius: 14, background: 'linear-gradient(90deg, #472715 0%, #7B3B00 100%)', color: 'white', fontFamily: 'Cairo' }}>
+                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', marginBottom: 6, fontWeight: 700 }}>👁 معاينة:</div>
+                          <div style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, background: 'rgba(255,255,255,0.20)', fontSize: 11, fontWeight: 800, marginBottom: 8 }}>{promoCard.title || 'العنوان'}</div>
+                          <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8, lineHeight: 1.4 }}>{promoCard.description || 'الوصف'}</div>
+                          <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 14, border: '1px solid rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 700 }}>{promoCard.buttonText || 'الزر'}</div>
+                        </div>
+                      </div>
+                      <div className="admin-settings-card-footer">
+                        {promoCardStatus === 'saving' && <span className="save-indicator saving">⏳ جاري الحفظ…</span>}
+                        {promoCardStatus === 'success' && <span className="save-indicator success">✓ تم الحفظ</span>}
+                        {promoCardStatus === 'error' && <span className="save-indicator error">✕ فشل الحفظ</span>}
+                        <button className="admin-row-btn" disabled={!dirty} onClick={() => setPromoCard(promoCardSaved)}>إلغاء</button>
+                        <button className="admin-row-btn primary" disabled={!dirty || promoCardStatus === 'saving'} onClick={savePromoCard}>💾 حفظ</button>
                       </div>
                     </div>
                   );

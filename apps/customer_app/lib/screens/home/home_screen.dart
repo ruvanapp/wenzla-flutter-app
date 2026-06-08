@@ -48,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_appState!.stores.isEmpty)     _appState!.loadStores();
       if (_appState!.categories.isEmpty) _appState!.loadCategories();
       _appState!.loadHomeCms();
+      _appState!.loadHomePromoCard();
       _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
         if (!mounted || !_bannerCtrl.hasClients) return;
         final cmsBanners = _appState?.homeBanners ?? [];
@@ -76,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
           color: kHoney,
           onRefresh: () async {
             final st = context.read<AppState>();
-            await Future.wait([st.loadStores(), st.loadCategories(), st.loadHomeCms(force: true)]);
+            await Future.wait([st.loadStores(), st.loadCategories(), st.loadHomeCms(force: true), st.loadHomePromoCard()]);
           },
           child: CustomScrollView(
             slivers: [
@@ -201,9 +202,9 @@ class _HomeScreenState extends State<HomeScreen> {
       // ── CMS loaded: use real banners or Pexels as true offline fallback ─────
       final count = cmsBanners.isNotEmpty ? cmsBanners.length : _banners.length;
       return Padding(
-        padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
+        padding: const EdgeInsets.fromLTRB(0, 6, 0, 8),
         child: SizedBox(
-          height: 224,
+          height: 170,
           child: Stack(
             children: [
               PageView.builder(
@@ -282,9 +283,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildBannerShimmer() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
+      padding: const EdgeInsets.fromLTRB(0, 6, 0, 8),
       child: SizedBox(
-        height: 224,
+        height: 170,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
           child: ClipRRect(
@@ -951,7 +952,22 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
 
-      // Fallback static promo
+      // ── Dynamic dashboard-controlled promo card (Phase: home banner upgrade) ──
+      final card = st.homePromoCard;
+      // Hide entirely if disabled or not yet loaded
+      if (card == null || card['enabled'] != true) {
+        return const SizedBox.shrink();
+      }
+      final pcTitle = (card['title'] as String?)?.trim().isNotEmpty == true
+          ? card['title'] as String
+          : 'عروض اليوم';
+      final pcDesc = (card['description'] as String?)?.trim().isNotEmpty == true
+          ? card['description'] as String
+          : 'خصومات خاصة على منتجات مختارة لفترة محدودة';
+      final pcBtn = (card['buttonText'] as String?)?.trim().isNotEmpty == true
+          ? card['buttonText'] as String
+          : 'تسوق الآن';
+
       return Container(
         margin: const EdgeInsets.fromLTRB(14, 4, 14, 8),
         padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
@@ -977,16 +993,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const HoneyChip('نصيحة خبراء العسل', background: Color(0x33FFFFFF), textColor: Colors.white),
+                  HoneyChip(pcTitle, background: const Color(0x33FFFFFF), textColor: Colors.white),
                   const SizedBox(height: 6),
-                  const Text(
-                    'كيف تختار عسلًا طبيعيًا أصيلًا؟',
-                    style: TextStyle(
+                  Text(
+                    pcDesc,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
                       fontFamily: 'Cairo',
                       fontWeight: FontWeight.w700,
-                      fontSize: 14,
+                      fontSize: 13,
                       color: Colors.white,
-                      height: 1.3,
+                      height: 1.35,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -999,9 +1017,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       minimumSize: const Size(0, 32),
                     ),
-                    child: const Text(
-                      'اقرأ الدليل',
-                      style: TextStyle(
+                    child: Text(
+                      pcBtn,
+                      style: const TextStyle(
                         fontFamily: 'Cairo',
                         fontWeight: FontWeight.w700,
                         fontSize: 11,
@@ -1012,7 +1030,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            // Circular icon container (replaces large emoji for cleaner look)
+            // Circular icon container — clean look without an emoji
             Container(
               width: 56,
               height: 56,
@@ -1023,7 +1041,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               child: const Center(
                 child: Icon(
-                  Icons.menu_book_rounded,
+                  Icons.local_offer_rounded,
                   color: Colors.white,
                   size: 28,
                 ),

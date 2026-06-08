@@ -233,6 +233,7 @@ class AppState extends ChangeNotifier {
   List<dynamic> _homeCmsCategories = [];
   List<dynamic> _featuredStores    = [];
   bool          _cmsLoading        = false;
+  Map<String, dynamic>? _homePromoCard;
 
   List<dynamic> get homeBanners       => _homeBanners;
   List<dynamic> get homePromotions    => _homePromotions;
@@ -240,6 +241,18 @@ class AppState extends ChangeNotifier {
   List<dynamic> get homeCmsCategories => _homeCmsCategories;
   List<dynamic> get featuredStores    => _featuredStores;
   bool          get cmsLoading        => _cmsLoading;
+  Map<String, dynamic>? get homePromoCard => _homePromoCard;
+
+  Future<void> loadHomePromoCard() async {
+    try {
+      final api = ApiService(token: _token);
+      final res = await api.get('/customer/settings/home-promo-card');
+      if (res is Map<String, dynamic>) {
+        _homePromoCard = res;
+        notifyListeners();
+      }
+    } catch (_) { /* keep silent — card stays null and is hidden */ }
+  }
 
   /// Whether the CMS has categories configured (to decide fallback vs CMS rendering)
   bool get hasCmsCategories => _homeCmsCategories.isNotEmpty;
