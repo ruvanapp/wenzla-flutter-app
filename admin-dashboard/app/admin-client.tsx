@@ -578,8 +578,8 @@ export default function AdminClient() {
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingSaving, setShippingSaving] = useState(false);
   // Phase: Home Promo Card
-  const [promoCard, setPromoCard] = useState({ enabled: false, title: 'عروض اليوم', description: 'خصومات خاصة على منتجات مختارة لفترة محدودة', buttonText: 'تسوق الآن' });
-  const [promoCardSaved, setPromoCardSaved] = useState({ enabled: false, title: 'عروض اليوم', description: 'خصومات خاصة على منتجات مختارة لفترة محدودة', buttonText: 'تسوق الآن' });
+  const [promoCard, setPromoCard] = useState({ enabled: false, title: 'عروض اليوم', description: 'خصومات خاصة على منتجات مختارة لفترة محدودة', buttonText: 'تسوق الآن', actionType: 'none', actionTarget: '' });
+  const [promoCardSaved, setPromoCardSaved] = useState({ enabled: false, title: 'عروض اليوم', description: 'خصومات خاصة على منتجات مختارة لفترة محدودة', buttonText: 'تسوق الآن', actionType: 'none', actionTarget: '' });
   const [promoCardStatus, setPromoCardStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [shippingNewName, setShippingNewName] = useState('');
   const [shippingNewFee, setShippingNewFee] = useState('');
@@ -4270,6 +4270,44 @@ export default function AdminClient() {
 
                         <label>نص الزر</label>
                         <input type="text" value={promoCard.buttonText} onChange={e => setPromoCard(c => ({ ...c, buttonText: e.target.value }))} maxLength={30} placeholder="تسوق الآن" />
+                        <div style={{ height: 10 }} />
+
+                        <label>إجراء الزر</label>
+                        <select value={promoCard.actionType} onChange={e => setPromoCard(c => ({ ...c, actionType: e.target.value, actionTarget: '' }))} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.2)', fontFamily: 'Cairo', fontSize: 13 }}>
+                          <option value="none">بدون إجراء</option>
+                          <option value="product">فتح منتج</option>
+                          <option value="store">فتح متجر</option>
+                          <option value="category">فتح تصنيف</option>
+                          <option value="cart">فتح السلة</option>
+                          <option value="referral">صفحة الإحالة</option>
+                          <option value="external_url">رابط خارجي</option>
+                        </select>
+                        {promoCard.actionType === 'product' && (<>
+                          <div style={{ height: 8 }} />
+                          <label>معرّف المنتج (Product ID)</label>
+                          <select value={promoCard.actionTarget} onChange={e => setPromoCard(c => ({ ...c, actionTarget: e.target.value }))} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.2)', fontFamily: 'Cairo', fontSize: 13 }}>
+                            <option value="">— اختر منتج —</option>
+                            {products.map((p: any) => <option key={p.id} value={p.id}>{p.name} ({p.merchant?.storeName || '—'})</option>)}
+                          </select>
+                        </>)}
+                        {promoCard.actionType === 'store' && (<>
+                          <div style={{ height: 8 }} />
+                          <label>معرّف المتجر (Store ID)</label>
+                          <select value={promoCard.actionTarget} onChange={e => setPromoCard(c => ({ ...c, actionTarget: e.target.value }))} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.2)', fontFamily: 'Cairo', fontSize: 13 }}>
+                            <option value="">— اختر متجر —</option>
+                            {merchants.map((m: any) => <option key={m.id} value={m.id}>{m.storeName}</option>)}
+                          </select>
+                        </>)}
+                        {promoCard.actionType === 'category' && (<>
+                          <div style={{ height: 8 }} />
+                          <label>اسم التصنيف</label>
+                          <input type="text" value={promoCard.actionTarget} onChange={e => setPromoCard(c => ({ ...c, actionTarget: e.target.value }))} maxLength={100} placeholder="عسل طبيعي" />
+                        </>)}
+                        {promoCard.actionType === 'external_url' && (<>
+                          <div style={{ height: 8 }} />
+                          <label>الرابط (URL)</label>
+                          <input type="url" value={promoCard.actionTarget} onChange={e => setPromoCard(c => ({ ...c, actionTarget: e.target.value }))} maxLength={500} placeholder="https://example.com" dir="ltr" />
+                        </>)}
 
                         {/* Preview */}
                         <div style={{ marginTop: 14, padding: '14px 16px', borderRadius: 14, background: 'linear-gradient(90deg, #472715 0%, #7B3B00 100%)', color: 'white', fontFamily: 'Cairo' }}>

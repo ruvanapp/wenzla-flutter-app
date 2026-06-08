@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
 import '../../widgets/widgets.dart';
@@ -1009,7 +1010,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton(
-                    onPressed: () {},
+                    onPressed: () => _handlePromoAction(context, card),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
                       side: const BorderSide(color: Colors.white60),
@@ -1271,6 +1272,43 @@ class _HomeScreenState extends State<HomeScreen> {
         child: FadeTransition(opacity: anim, child: child),
       ),
     );
+  }
+
+  // ── Promo card CTA action handler ───────────────────────────────────────────
+  void _handlePromoAction(BuildContext context, Map<String, dynamic> card) {
+    final actionType = (card['actionType'] as String?) ?? 'none';
+    final actionTarget = (card['actionTarget'] as String?) ?? '';
+    final st = context.read<AppState>();
+
+    switch (actionType) {
+      case 'product':
+        if (actionTarget.isEmpty) return;
+        st.openProductById(actionTarget);
+        break;
+      case 'store':
+        if (actionTarget.isEmpty) return;
+        st.openStoreWithData({'id': actionTarget});
+        break;
+      case 'category':
+        if (actionTarget.isEmpty) return;
+        _openCategoryFilter(context, actionTarget);
+        break;
+      case 'cart':
+        st.showScreen(AppScreen.cart, bottomIndex: 2);
+        break;
+      case 'external_url':
+        if (actionTarget.isEmpty) return;
+        final uri = Uri.tryParse(actionTarget);
+        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+          launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+        break;
+      case 'referral':
+        // Safe fallback — no dedicated referral page yet
+        break;
+      default:
+        break;
+    }
   }
 
   // ── Category filter bottom sheet ─────────────────────────────────────────

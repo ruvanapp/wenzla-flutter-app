@@ -417,6 +417,25 @@ class AppState extends ChangeNotifier {
     showScreen(AppScreen.productDetail);
   }
 
+  /// Open a product by ID — fetches from API to get full details.
+  /// Safe fallback: if fetch fails, opens with minimal data (id only).
+  Future<void> openProductById(String productId) async {
+    if (productId.isEmpty) return;
+    showScreen(AppScreen.productDetail);
+    _selectedProduct = {'id': productId};
+    notifyListeners();
+    try {
+      final api = ApiService(token: _token);
+      final res = await api.get('/customer/products/$productId');
+      if (res is Map) {
+        _selectedProduct = Map<String, dynamic>.from(res);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[openProductById] failed: $e');
+    }
+  }
+
   void closeProduct() {
     _selectedProduct = null;
     if (_selectedStoreId != null) {
