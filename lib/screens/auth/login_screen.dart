@@ -12,8 +12,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _phoneCtrl = TextEditingController();
-  final _otpCtrl   = TextEditingController();
+  final _phoneCtrl    = TextEditingController();
+  final _otpCtrl      = TextEditingController();
+  final _referralCtrl = TextEditingController();
   String _dialCode  = '+20';
   String _flag      = '🇪🇬';
   bool   _otpSent   = false;
@@ -24,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _phoneCtrl.dispose();
     _otpCtrl.dispose();
+    _referralCtrl.dispose();
     super.dispose();
   }
 
@@ -168,6 +170,32 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                // Referral code (optional)
+                TextField(
+                  controller:    _referralCtrl,
+                  textDirection: TextDirection.ltr,
+                  textAlign:     TextAlign.center,
+                  textCapitalization: TextCapitalization.characters,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')), LengthLimitingTextInputFormatter(10)],
+                  style: const TextStyle(fontFamily: 'Cairo',
+                    fontWeight: FontWeight.w600, fontSize: 16, letterSpacing: 4),
+                  decoration: InputDecoration(
+                    hintText: 'كود الإحالة (اختياري)',
+                    hintStyle: const TextStyle(color: kTextMuted, fontSize: 13, letterSpacing: 0),
+                    filled: true, fillColor: kSurface,
+                    prefixIcon: const Icon(Icons.card_giftcard_rounded, color: kHoney, size: 20),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: kBorder)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: kBorder)),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: kHoney, width: 2)),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 HoneyButton(
                   label:   _loading ? 'جاري التحقق...' : 'تحقق وسجّل الدخول',
                   loading: _loading,
@@ -259,7 +287,8 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     setState(() { _loading = true; _error = ''; });
     final phone = '$_dialCode${_phoneCtrl.text.trim()}';
-    final ok    = await context.read<AppState>().verifyOtp(phone, _otpCtrl.text);
+    final referral = _referralCtrl.text.trim().isNotEmpty ? _referralCtrl.text.trim() : null;
+    final ok    = await context.read<AppState>().verifyOtp(phone, _otpCtrl.text, referralCode: referral);
     if (!mounted) return;
     setState(() => _loading = false);
     if (!ok) setState(() => _error = 'رمز التحقق غير صحيح');

@@ -67,11 +67,15 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> verifyOtp(String phone, String otp) async {
+  Future<bool> verifyOtp(String phone, String otp, {String? referralCode}) async {
     try {
       final api  = ApiService(token: _token);
       final norm = ApiService.normalisePhone(phone);
-      final res  = await api.post('/auth/customer/verify-otp', {'phone': norm, 'code': otp});
+      final body = <String, dynamic>{'phone': norm, 'code': otp};
+      if (referralCode != null && referralCode.trim().isNotEmpty) {
+        body['referralCode'] = referralCode.trim().toUpperCase();
+      }
+      final res  = await api.post('/auth/customer/verify-otp', body);
       if (res is Map && res['token'] != null) {
         _token = res['token'] as String;
         _user  = res['user']  as Map<String, dynamic>?;
