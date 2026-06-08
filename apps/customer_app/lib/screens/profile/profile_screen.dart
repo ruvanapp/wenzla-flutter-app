@@ -8,6 +8,7 @@ import '../../widgets/widgets.dart';
 import 'account_header.dart';
 import 'account_section.dart';
 import 'account_tile.dart';
+import 'referral_screen.dart';
 import 'wallet_history_screen.dart';
 import 'wallet_recharge_sheet.dart';
 
@@ -439,6 +440,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                       onTap: () => context
                           .read<AppState>()
                           .showScreen(AppScreen.orders, bottomIndex: 1),
+                    ),
+                    AccountTile(
+                      icon: Icons.card_giftcard_rounded,
+                      title: 'ادع أصدقاءك واربح',
+                      subtitle: 'شارك كودك واحصل على مكافآت',
+                      iconColor: kHoney,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ReferralScreen()),
+                        );
+                      },
                     ),
                     AccountTile(
                       icon: Icons.person_rounded,

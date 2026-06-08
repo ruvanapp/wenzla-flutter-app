@@ -259,6 +259,7 @@ const NAV_ITEMS = [
   { group: 'المالية', items: [
     { key: 'financial',   icon: '💰', label: 'المالية والعمولات' },
     { key: 'shipping',    icon: '🚚', label: 'رسوم الشحن' },
+    { key: 'referrals',   icon: '🤝', label: 'نظام الإحالة' },
     { key: 'wallet_manual_credit', icon: '💳', label: 'إضافة رصيد يدوي' },
     { key: 'wallet_recharge_requests', icon: '🏦', label: 'طلبات شحن المحفظة' },
     { key: 'wallet_transactions', icon: '📒', label: 'سجل معاملات المحفظة' },
@@ -517,6 +518,260 @@ function AdminConfirmDialog({
             {confirmLabel}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Referral Panel Component ──────────────────────────────────────────────────
+
+type ReferralSettings = { enabled: boolean; referrerReward: number; refereeReward: number; maxPerUser: number };
+type ReferralEntry = {
+  id: string; referrerId: string; refereeId: string; orderId?: string;
+  status: string; referrerReward?: number; refereeReward?: number;
+  createdAt: string; completedAt?: string;
+  referrer: { id: string; name?: string; phone?: string };
+  referee: { id: string; name?: string; phone?: string };
+};
+type ReferralData = {
+  referrals: ReferralEntry[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+  stats: { total: number; completed: number; pending: number; totalRewardsPaid: number };
+};
+
+function ReferralPanel({ apiUrl, token }: { apiUrl: string; token: string }) {
+  const [settings, setSettings] = useState<ReferralSettings>({ enabled: false, referrerReward: 50, refereeReward: 25, maxPerUser: 20 });
+  const [form, setForm] = useState<ReferralSettings>({ enabled: false, referrerReward: 50, refereeReward: 25, maxPerUser: 20 });
+  const [saving, setSaving] = useState(false);
+  const [data, setData] = useState<ReferralData | null>(null);
+  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  const loadSettings = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/admin/settings/referral`, { headers });
+      if (res.ok) {
+        const s = await res.json();
+        setSettings(s);
+        setForm(s);
+      }
+    } catch {}
+  };
+
+  const loadHistory = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: '15' });
+      if (statusFilter) params.set('status', statusFilter);
+      if (search.trim()) params.set('search', search.trim());
+      const res = await fetch(`${apiUrl}/admin/referrals?${params}`, { headers });
+      if (res.ok) setData(await res.json());
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => { loadSettings(); loadHistory(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadHistory(); }, [page, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveSettings = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch(`${apiUrl}/admin/settings/referral`, { method: 'PUT', headers, body: JSON.stringify(form) });
+      if (res.ok) {
+        const s = await res.json();
+        setSettings(s);
+        setForm(s);
+        setMsg({ type: 'success', text: 'تم حفظ إعدادات الإحالة بنجاح' });
+      } else {
+        setMsg({ type: 'error', text: 'فشل حفظ الإعدادات' });
+      }
+    } catch {
+      setMsg({ type: 'error', text: 'خطأ في الاتصال' });
+    }
+    setSaving(false);
+  };
+
+  const STATUS_AR: Record<string, string> = { PENDING: 'قيد الانتظار', COMPLETED: 'مكتمل', CANCELLED: 'ملغي', EXPIRED: 'منتهي' };
+  const STATUS_CLASS: Record<string, string> = { PENDING: 'gold', COMPLETED: 'green', CANCELLED: 'red', EXPIRED: 'gray' };
+
+  return (
+    <div>
+      <div className="pg-header">
+        <div>
+          <h2 className="pg-title">نظام الإحالة</h2>
+          <p className="pg-subtitle">إدارة برنامج إحالة الأصدقاء — المكافآت والحالة والسجل</p>
+        </div>
+      </div>
+
+      {/* Stats */}
+      {data?.stats && (
+        <div className="analytics-grid" style={{ marginBottom: 24 }}>
+          <div className="an-card blue">
+            <div className="an-card-icon">🤝</div>
+            <div className="an-card-label">إجمالي الإحالات</div>
+            <div className="an-card-value">{data.stats.total}</div>
+          </div>
+          <div className="an-card green">
+            <div className="an-card-icon">✅</div>
+            <div className="an-card-label">مكتملة</div>
+            <div className="an-card-value">{data.stats.completed}</div>
+          </div>
+          <div className="an-card gold">
+            <div className="an-card-icon">⏳</div>
+            <div className="an-card-label">قيد الانتظار</div>
+            <div className="an-card-value">{data.stats.pending}</div>
+          </div>
+          <div className="an-card purple">
+            <div className="an-card-icon">💰</div>
+            <div className="an-card-label">إجمالي المكافآت المدفوعة</div>
+            <div className="an-card-value">{data.stats.totalRewardsPaid.toLocaleString('ar-EG')} ج.م</div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Card */}
+      <div className="two-col" style={{ marginBottom: 24 }}>
+        <div className="chart-panel">
+          <h3 className="chart-panel-title">⚙️ إعدادات الإحالة</h3>
+          <div style={{ display: 'grid', gap: 14, marginTop: 14 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'Cairo', fontSize: 14, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={form.enabled}
+                onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))}
+                style={{ width: 18, height: 18 }}
+              />
+              تفعيل نظام الإحالة
+            </label>
+            <div>
+              <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>مكافأة المُحيل (ج.م)</label>
+              <input type="number" min={0} max={10000} value={form.referrerReward} onChange={e => setForm(f => ({ ...f, referrerReward: Number(e.target.value) }))}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 14, background: 'var(--paper)' }} />
+            </div>
+            <div>
+              <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>مكافأة المُحال (ج.م)</label>
+              <input type="number" min={0} max={10000} value={form.refereeReward} onChange={e => setForm(f => ({ ...f, refereeReward: Number(e.target.value) }))}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 14, background: 'var(--paper)' }} />
+            </div>
+            <div>
+              <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>الحد الأقصى للإحالات لكل مستخدم</label>
+              <input type="number" min={1} max={1000} value={form.maxPerUser} onChange={e => setForm(f => ({ ...f, maxPerUser: Number(e.target.value) }))}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 14, background: 'var(--paper)' }} />
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="action-btn" onClick={saveSettings} disabled={saving}
+                style={{ background: 'var(--brown)', color: 'var(--cream)', border: 'none', opacity: saving ? 0.6 : 1 }}>
+                {saving ? '⏳ جاري الحفظ...' : '💾 حفظ الإعدادات'}
+              </button>
+              <button className="action-btn" onClick={() => setForm(settings)}
+                style={{ background: 'transparent', color: 'var(--brown)', border: '1px solid var(--brown)' }}>
+                إلغاء
+              </button>
+            </div>
+            {msg && (
+              <div style={{ padding: '8px 14px', borderRadius: 10, fontFamily: 'Cairo', fontSize: 13, background: msg.type === 'success' ? '#dcfce7' : '#fef2f2', color: msg.type === 'success' ? '#16a34a' : '#dc2626' }}>
+                {msg.text}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="chart-panel">
+          <h3 className="chart-panel-title">ℹ️ كيف يعمل النظام</h3>
+          <div style={{ fontFamily: 'Cairo', fontSize: 13, lineHeight: 2, color: 'var(--muted)', marginTop: 12 }}>
+            <p>1. كل مستخدم يحصل على كود إحالة فريد</p>
+            <p>2. المستخدم الجديد يدخل الكود عند التسجيل</p>
+            <p>3. عند اكتمال أول طلب (حالة: تم التسليم):</p>
+            <p style={{ paddingRight: 16 }}>• المُحيل يحصل على <strong>{settings.referrerReward} ج.م</strong></p>
+            <p style={{ paddingRight: 16 }}>• المُحال يحصل على <strong>{settings.refereeReward} ج.م</strong></p>
+            <p>4. المكافأة تُضاف تلقائياً للمحفظة</p>
+            <p>5. الإيقاف الفوري: أوقف النظام من هنا وستتوقف جميع المكافآت</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Referral History Table */}
+      <div className="chart-panel" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(71,39,21,0.08)', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <h3 style={{ fontFamily: 'Cairo', fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--brown)' }}>سجل الإحالات</h3>
+          <input
+            type="text"
+            placeholder="بحث بالهاتف أو الاسم..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { setPage(1); loadHistory(); } }}
+            style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, minWidth: 180, background: 'var(--paper)' }}
+          />
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+            style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)' }}>
+            <option value="">الكل</option>
+            <option value="PENDING">قيد الانتظار</option>
+            <option value="COMPLETED">مكتمل</option>
+            <option value="CANCELLED">ملغي</option>
+            <option value="EXPIRED">منتهي</option>
+          </select>
+          <button onClick={() => { setPage(1); loadHistory(); }} className="action-btn" style={{ padding: '6px 14px', fontSize: 12 }}>بحث</button>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', fontFamily: 'Cairo', color: 'var(--muted)' }}>جاري التحميل...</div>
+        ) : !data?.referrals.length ? (
+          <div style={{ padding: 40, textAlign: 'center', fontFamily: 'Cairo', color: 'var(--muted)' }}>لا توجد إحالات بعد</div>
+        ) : (
+          <>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="admin-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th>المُحيل</th>
+                    <th>المُحال</th>
+                    <th>الحالة</th>
+                    <th>مكافأة المُحيل</th>
+                    <th>مكافأة المُحال</th>
+                    <th>التاريخ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.referrals.map(r => (
+                    <tr key={r.id}>
+                      <td style={{ fontFamily: 'Cairo', fontSize: 13 }}>
+                        <div>{r.referrer.name || '—'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.referrer.phone}</div>
+                      </td>
+                      <td style={{ fontFamily: 'Cairo', fontSize: 13 }}>
+                        <div>{r.referee.name || '—'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.referee.phone}</div>
+                      </td>
+                      <td>
+                        <span className={`status-badge ${STATUS_CLASS[r.status] ?? 'gray'}`}>
+                          {STATUS_AR[r.status] ?? r.status}
+                        </span>
+                      </td>
+                      <td style={{ fontFamily: 'Cairo', fontSize: 13 }}>{r.referrerReward != null ? `${r.referrerReward} ج.م` : '—'}</td>
+                      <td style={{ fontFamily: 'Cairo', fontSize: 13 }}>{r.refereeReward != null ? `${r.refereeReward} ج.م` : '—'}</td>
+                      <td style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)' }}>
+                        {new Date(r.createdAt).toLocaleDateString('ar-EG')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* Pagination */}
+            {data.pagination.totalPages > 1 && (
+              <div style={{ padding: '12px 20px', display: 'flex', justifyContent: 'center', gap: 8, borderTop: '1px solid rgba(71,39,21,0.08)' }}>
+                <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="action-btn" style={{ padding: '4px 12px', fontSize: 12 }}>السابق</button>
+                <span style={{ fontFamily: 'Cairo', fontSize: 13, lineHeight: '32px' }}>{page} / {data.pagination.totalPages}</span>
+                <button disabled={page >= data.pagination.totalPages} onClick={() => setPage(p => p + 1)} className="action-btn" style={{ padding: '4px 12px', fontSize: 12 }}>التالي</button>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
@@ -4582,6 +4837,8 @@ export default function AdminClient() {
               </div>
             );
           })()}
+
+          {activePanel === 'referrals' && <ReferralPanel apiUrl={apiUrl} token={token} />}
 
           {activePanel === 'whatsapp_support' && (
             <div>

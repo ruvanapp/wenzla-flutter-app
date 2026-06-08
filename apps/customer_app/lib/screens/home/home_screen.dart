@@ -6,6 +6,7 @@ import '../../state/app_state.dart';
 import '../../theme/colors.dart';
 import '../../widgets/widgets.dart';
 import '../../services/api_service.dart';
+import '../profile/referral_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -1304,7 +1305,9 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         break;
       case 'referral':
-        // Safe fallback — no dedicated referral page yet
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ReferralScreen()),
+        );
         break;
       default:
         break;
