@@ -790,7 +790,7 @@ export default function AdminClient() {
       prevOrderCount.current = data.total ?? 0;
     } catch { if (!silent) setMessage('فشل تحميل الطلبات'); }
     finally { if (!silent) setOrdersLoading(false); }
-  }, [orderPage, orderSearch, orderStatus, orderDay, orderDateFrom, orderDateTo, orderMerchantId, fullOrders]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orderPage, orderSearch, orderStatus, orderDay, orderDateFrom, orderDateTo, orderMerchantId, fullOrders, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchOrderStats() {
     try { setOrderStats(await api<OrderStats>('/admin/orders/stats')); } catch { /* silent */ }
