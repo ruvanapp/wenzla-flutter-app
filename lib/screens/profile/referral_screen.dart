@@ -38,8 +38,8 @@ class _ReferralScreenState extends State<ReferralScreen> {
       final st = context.read<AppState>();
       final api = ApiService(token: st.token);
       final results = await Future.wait([
-        api.get('/customer/referral/my-code'),
-        api.get('/customer/referral/stats'),
+        api.get('/customer/referral/my-code', auth: true),
+        api.get('/customer/referral/stats', auth: true),
       ]);
 
       final codeRes = results[0];
