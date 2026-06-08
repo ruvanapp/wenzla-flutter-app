@@ -18,78 +18,58 @@ class CartStoreHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Color(0xFF2C1204), Color(0xFF4A2810)],
           begin: Alignment.topRight,
           end: Alignment.bottomLeft,
         ),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: kRoyal.withOpacity(0.25),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
+            color: kRoyal.withOpacity(0.18),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           children: [
             // Store logo
             _StoreLogo(storeName: storeName, logoUrl: storeLogoUrl),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             // Store info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: kHoney.withOpacity(0.25),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                              color: kHoneyLight.withOpacity(0.5), width: 1),
-                        ),
-                        child: Text(
-                          '🏪 متجر',
-                          style: TextStyle(
-                            color: kHoneyLight,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
                   Text(
                     storeName,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 16,
+                      fontSize: 14,
                       fontWeight: FontWeight.w800,
+                      fontFamily: 'Cairo',
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Row(
                     children: [
-                      Icon(Icons.delivery_dining_outlined,
-                          color: kHoneyLight, size: 14),
+                      const Icon(Icons.delivery_dining_outlined,
+                          color: kHoneyLight, size: 12),
                       const SizedBox(width: 4),
                       Text(
-                        'توصيل عادةً خلال 30-45 دقيقة',
+                        'توصيل خلال 3 أيام',
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.65),
-                          fontSize: 11,
+                          fontSize: 10.5,
+                          fontFamily: 'Cairo',
                         ),
                       ),
                     ],
@@ -102,17 +82,18 @@ class CartStoreHeader extends StatelessWidget {
               TapScaleWidget(
                 onTap: onViewStore!,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: kHoney,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
-                    'عرض',
+                    'عرض المتجر',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 12,
+                      fontSize: 11,
+                      fontFamily: 'Cairo',
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -133,10 +114,10 @@ class _StoreLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const size = 52.0;
+    const size = 42.0;
     if (logoUrl != null && logoUrl!.isNotEmpty) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         child: CachedNetworkImage(
           imageUrl: NetImage.optimizeCloudinaryUrl(
                 logoUrl!, width: 104, height: 104) ??

@@ -237,6 +237,7 @@ class AppState extends ChangeNotifier {
   List<dynamic> _homeCmsCategories = [];
   List<dynamic> _featuredStores    = [];
   bool          _cmsLoading        = false;
+  Map<String, dynamic>? _homePromoCard;
 
   List<dynamic> get homeBanners       => _homeBanners;
   List<dynamic> get homePromotions    => _homePromotions;
@@ -244,6 +245,18 @@ class AppState extends ChangeNotifier {
   List<dynamic> get homeCmsCategories => _homeCmsCategories;
   List<dynamic> get featuredStores    => _featuredStores;
   bool          get cmsLoading        => _cmsLoading;
+  Map<String, dynamic>? get homePromoCard => _homePromoCard;
+
+  Future<void> loadHomePromoCard() async {
+    try {
+      final api = ApiService(token: _token);
+      final res = await api.get('/customer/settings/home-promo-card');
+      if (res is Map<String, dynamic>) {
+        _homePromoCard = res;
+        notifyListeners();
+      }
+    } catch (_) { /* keep silent — card stays null and is hidden */ }
+  }
 
   /// Whether the CMS has categories configured (to decide fallback vs CMS rendering)
   bool get hasCmsCategories => _homeCmsCategories.isNotEmpty;
@@ -408,6 +421,25 @@ class AppState extends ChangeNotifier {
     showScreen(AppScreen.productDetail);
   }
 
+  /// Open a product by ID — fetches from API to get full details.
+  /// Safe fallback: if fetch fails, opens with minimal data (id only).
+  Future<void> openProductById(String productId) async {
+    if (productId.isEmpty) return;
+    showScreen(AppScreen.productDetail);
+    _selectedProduct = {'id': productId};
+    notifyListeners();
+    try {
+      final api = ApiService(token: _token);
+      final res = await api.get('/customer/products/$productId');
+      if (res is Map) {
+        _selectedProduct = Map<String, dynamic>.from(res);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[openProductById] failed: $e');
+    }
+  }
+
   void closeProduct() {
     _selectedProduct = null;
     if (_selectedStoreId != null) {
@@ -544,6 +576,33 @@ class AppState extends ChangeNotifier {
     (s, i) => s + (double.tryParse(i['price']?.toString() ?? '0') ?? 0) * ((i['qty'] as int?) ?? 1),
   );
 
+  // ── Selected shipping zone (synced from checkout sheet) ─────────────────────
+  String? _selectedShippingZoneId;
+  double? _selectedShippingFee;
+  String? _selectedShippingZoneName;
+
+  String? get selectedShippingZoneId => _selectedShippingZoneId;
+  double? get selectedShippingFee => _selectedShippingFee;
+  String? get selectedShippingZoneName => _selectedShippingZoneName;
+
+  void setSelectedShippingZone({
+    required String id,
+    required double fee,
+    String? name,
+  }) {
+    _selectedShippingZoneId = id;
+    _selectedShippingFee = fee;
+    _selectedShippingZoneName = name;
+    notifyListeners();
+  }
+
+  void clearSelectedShippingZone() {
+    _selectedShippingZoneId = null;
+    _selectedShippingFee = null;
+    _selectedShippingZoneName = null;
+    notifyListeners();
+  }
+
   // ── Checkout ──────────────────────────────────────────────────────────────────
   bool _checkingOut = false;
   bool get checkingOut => _checkingOut;
@@ -552,7 +611,7 @@ class AppState extends ChangeNotifier {
     required String name,
     required String phone,
     required String address,
-    required String governorate,
+    required String shippingZoneId,
     String? notes,
     String? lat,
     String? lng,
@@ -592,10 +651,6 @@ class AppState extends ChangeNotifier {
       'productId': i['id'],
       'quantity':  (i['qty'] as int?) ?? 1,
     }).toList();
-    // Combine address + governorate into deliveryAddress
-    final deliveryAddress = governorate.isNotEmpty
-        ? '$address، $governorate'
-        : address;
 
     // Determine payment method
     String paymentMethod = 'CASH_ON_DELIVERY';
@@ -613,7 +668,8 @@ class AppState extends ChangeNotifier {
         'merchantId':      merchantId,
         'customerName':    name,
         'customerPhone':   ApiService.normalisePhone(phone),
-        'deliveryAddress': deliveryAddress,
+        'deliveryAddress': address,
+        'shippingZoneId':  shippingZoneId,
         'items':           items,
         'paymentMethod':   paymentMethod,
         if (useWallet && walletAmount > 0) 'walletAmount': walletAmount,

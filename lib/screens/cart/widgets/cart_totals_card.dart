@@ -1,125 +1,167 @@
 import 'package:flutter/material.dart';
 import '../../../theme/colors.dart';
-import '../../../widgets/widgets.dart';
 
 class CartTotalsCard extends StatelessWidget {
   final double subtotal;
-  final double deliveryFee;
+  final double? deliveryFee; // null when no governorate is selected yet
   final double discount;
+  final int itemCount;
 
   const CartTotalsCard({
     super.key,
     required this.subtotal,
-    this.deliveryFee = 0,
-    this.discount    = 0,
+    this.deliveryFee,
+    this.discount = 0,
+    this.itemCount = 0,
   });
 
   @override
   Widget build(BuildContext context) {
-    final total = (subtotal + deliveryFee - discount).clamp(0.0, double.infinity);
+    final fee = deliveryFee ?? 0;
+    final total = (subtotal + fee - discount).clamp(0.0, double.infinity);
+
+    final String feeValue;
+    final Color? feeColor;
+    final double feeFontSize;
+    if (deliveryFee == null) {
+      feeValue = 'اختر المحافظة';
+      feeColor = kTextMuted;
+      feeFontSize = 12;
+    } else if (fee <= 0) {
+      feeValue = 'مجاني';
+      feeColor = const Color(0xFF22A05B);
+      feeFontSize = 13;
+    } else {
+      feeValue = '${fee.toStringAsFixed(0)} ج.م';
+      feeColor = null;
+      feeFontSize = 13;
+    }
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-      child: HoneyCard(
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      decoration: BoxDecoration(
+        color: kSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kBorder, width: 1),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'ملخص الطلب',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          Row(
+            textDirection: TextDirection.rtl,
+            children: const [
+              Icon(Icons.receipt_long_outlined, size: 16, color: kHoney),
+              SizedBox(width: 6),
+              Text(
+                'ملخص الطلب',
+                style: TextStyle(
                   color: kTextDark,
                   fontWeight: FontWeight.w900,
-                  fontSize: 15,
+                  fontSize: 13,
+                  fontFamily: 'Cairo',
                 ),
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
-          _Row(
+          const SizedBox(height: 6),
+          const Divider(color: kBorder, height: 1),
+          const SizedBox(height: 6),
+          _CompactRow(
+            label: 'عدد المنتجات',
+            value: '$itemCount',
+          ),
+          const SizedBox(height: 4),
+          _CompactRow(
             label: 'المجموع الفرعي',
             value: '${subtotal.toStringAsFixed(0)} ج.م',
           ),
-          const SizedBox(height: 8),
-          _Row(
+          const SizedBox(height: 4),
+          _CompactRow(
             label: 'رسوم التوصيل',
-            value: deliveryFee <= 0
-                ? 'مجاني 🎉'
-                : '${deliveryFee.toStringAsFixed(0)} ج.م',
-            valueColor: deliveryFee <= 0 ? Colors.green : null,
+            value: feeValue,
+            valueColor: feeColor,
+            valueFontSize: feeFontSize,
           ),
           if (discount > 0) ...[
-            const SizedBox(height: 8),
-            _Row(
-              label: 'خصم القسيمة',
+            const SizedBox(height: 4),
+            _CompactRow(
+              label: 'الخصم',
               value: '- ${discount.toStringAsFixed(0)} ج.م',
-              valueColor: Colors.green,
+              valueColor: const Color(0xFF22A05B),
             ),
           ],
-          const SizedBox(height: 14),
-          const Divider(color: kBorder),
-          const SizedBox(height: 12),
-          // Total row
+          const SizedBox(height: 6),
+          const Divider(color: kBorder, height: 1),
+          const SizedBox(height: 6),
           Row(
+            textDirection: TextDirection.rtl,
             children: [
-              Text(
+              const Text(
                 'الإجمالي',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: kTextDark,
-                      fontWeight: FontWeight.w900,
-                    ),
+                style: TextStyle(
+                  color: kTextDark,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                  fontFamily: 'Cairo',
+                ),
               ),
               const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [kHoney, kDarkHoney],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Text(
-                  '${total.toStringAsFixed(0)} ج.م',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
-                  ),
+              Text(
+                '${total.toStringAsFixed(0)} ج.م',
+                style: const TextStyle(
+                  color: kHoney,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  fontFamily: 'Cairo',
                 ),
               ),
             ],
           ),
         ],
       ),
-    ),
     );
   }
 }
 
-class _Row extends StatelessWidget {
+class _CompactRow extends StatelessWidget {
   final String label;
   final String value;
   final Color? valueColor;
+  final double valueFontSize;
 
-  const _Row({required this.label, required this.value, this.valueColor});
+  const _CompactRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.valueFontSize = 12.5,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
+      textDirection: TextDirection.rtl,
       children: [
         Text(
           label,
-          style: const TextStyle(color: kTextBrown, fontSize: 13),
+          style: const TextStyle(
+            color: kTextBrown,
+            fontSize: 12,
+            fontFamily: 'Cairo',
+          ),
         ),
         const Spacer(),
-        Text(
-          value,
-          style: TextStyle(
-            color: valueColor ?? kTextDark,
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
+        Flexible(
+          child: Text(
+            value,
+            style: TextStyle(
+              color: valueColor ?? kTextDark,
+              fontWeight: FontWeight.w700,
+              fontSize: valueFontSize,
+              fontFamily: 'Cairo',
+            ),
+            textAlign: TextAlign.end,
           ),
         ),
       ],

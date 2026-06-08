@@ -89,12 +89,27 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               background: imgUrl != null && imgUrl.startsWith('http')
                   ? CachedNetworkImage(
                       imageUrl: NetImage.optimizeCloudinaryUrl(
-                            imgUrl, width: 1200, height: 600) ??
+                            imgUrl, width: 1080, height: 780) ??
                           imgUrl,
-                      fit: BoxFit.contain,
-                      placeholder: (_, __) => Container(
-                        color: kSurfaceWarm,
-                        child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                      fadeInDuration: const Duration(milliseconds: 150),
+                      // Show cached grid thumbnail instantly (same 18:13 ratio)
+                      placeholder: (_, __) => CachedNetworkImage(
+                        imageUrl: NetImage.optimizeCloudinaryUrl(
+                              imgUrl, width: 360, height: 260) ??
+                            imgUrl,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
+                        fadeInDuration: Duration.zero,
+                        fadeOutDuration: Duration.zero,
+                        placeholder: (_, __) => Container(
+                          color: kSurfaceWarm,
+                          child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),
+                        errorWidget: (_, __, ___) => Container(
+                          color: kSurfaceWarm,
+                          child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),
+                      ),
                       errorWidget: (_, __, ___) => Container(
                         color: kSurfaceWarm,
                         child: const Center(child: Text('🍯', style: TextStyle(fontSize: 80)))),
@@ -134,7 +149,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             SizedBox(width: 16),
                             TrustBadge(icon: Icons.eco_rounded,            label: 'طبيعي 100%', color: Color(0xFF2E7D32)),
                             SizedBox(width: 16),
-                            TrustBadge(icon: Icons.local_shipping_rounded, label: 'توصيل سريع', color: Color(0xFF0277BD)),
+                            TrustBadge(icon: Icons.local_shipping_rounded, label: 'توصيل خلال 3 أيام', color: Color(0xFF0277BD)),
                           ],
                         ),
                         const SizedBox(height: 16),

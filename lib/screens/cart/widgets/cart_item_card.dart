@@ -48,9 +48,13 @@ class CartItemCard extends StatelessWidget {
     final total    = price * qty;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      child: HoneyCard(
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: kSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kBorder, width: 1),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -58,27 +62,27 @@ class CartItemCard extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: SizedBox(
-              width: 82,
-              height: 82,
+              width: 70,
+              height: 70,
               child: imageUrl != null && imageUrl.isNotEmpty
                   ? CachedNetworkImage(
                       imageUrl: NetImage.optimizeCloudinaryUrl(
-                            imageUrl, width: 164, height: 164) ??
+                            imageUrl, width: 140, height: 140) ??
                           imageUrl,
-                      width: 82,
-                      height: 82,
+                      width: 70,
+                      height: 70,
                       fit: BoxFit.cover,
-                      memCacheWidth: 164,
-                      memCacheHeight: 164,
-                      maxWidthDiskCache: 164,
-                      maxHeightDiskCache: 164,
+                      memCacheWidth: 140,
+                      memCacheHeight: 140,
+                      maxWidthDiskCache: 140,
+                      maxHeightDiskCache: 140,
                       placeholder: (_, __) => _imagePlaceholder(),
                       errorWidget: (_, __, ___) => _imagePlaceholder(),
                     )
                   : _imagePlaceholder(),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           // Name + price + qty
           Expanded(
             child: Column(
@@ -90,21 +94,23 @@ class CartItemCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
+                    fontFamily: 'Cairo',
                     fontWeight: FontWeight.w700,
                     color: kTextDark,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 // Unit price
                 Text(
                   '${price.toStringAsFixed(0)} ج.م / قطعة',
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
+                    fontFamily: 'Cairo',
                     color: kTextMuted,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 // Qty controls + total
                 Row(
                   children: [
@@ -118,7 +124,8 @@ class CartItemCard extends StatelessWidget {
                     Text(
                       '${total.toStringAsFixed(0)} ج.م',
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
+                        fontFamily: 'Cairo',
                         fontWeight: FontWeight.w900,
                         color: kHoney,
                       ),
@@ -137,20 +144,19 @@ class CartItemCard extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(top: 2, right: 2),
               child: Container(
-                width: 30,
-                height: 30,
+                width: 28,
+                height: 28,
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFECEC),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.close_rounded,
-                    size: 16, color: Color(0xFFE53935)),
+                    size: 14, color: Color(0xFFE53935)),
               ),
             ),
           ),
         ],
       ),
-    ),
     );
   }
 
