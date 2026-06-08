@@ -16,7 +16,16 @@ type Overview = {
   orders: number;
   sales: number;
   commission: number;
+  ordersToday?: number;
+  revenueToday?: number;
+  revenueMonth?: number;
+  activeCustomers?: number;
+  averageOrderValue?: number;
 };
+
+type OrdersDayPoint = { date: string; orderCount: number; revenue: number };
+type StatusCount = { status: string; count: number };
+type GovernorateStat = { governorate: string; orderCount: number; totalRevenue: number };
 
 type Merchant = {
   id: string;
@@ -257,6 +266,7 @@ const NAV_ITEMS = [
   ]},
   { group: 'الإدارة', items: [
     { key: 'technical',   icon: '⚙️',  label: 'المراقبة التقنية' },
+    { key: 'activity',    icon: '📋', label: 'سجل النشاط' },
     { key: 'security',    icon: '🔐', label: 'الصلاحيات والأمان' },
     { key: 'roadmap',     icon: '🗺️',  label: 'خارطة الطريق' },
   ]},
@@ -299,6 +309,30 @@ function exportCSV(orders: FullOrder[]) {
   const a = document.createElement('a');
   a.href = url;
   a.download = `orders_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(v: unknown): string {
+  if (v == null) return '';
+  const s = String(v);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function downloadCSV<T>(filename: string, headers: string[], rows: T[], rowMapper: (r: T) => (string | number | null | undefined)[]) {
+  const lines = [
+    headers.join(','),
+    ...rows.map(r => rowMapper(r).map(csvEscape).join(',')),
+  ];
+  const csv = lines.join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${filename}_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -554,6 +588,14 @@ export default function AdminClient() {
   const [bulkOrderStatus, setBulkOrderStatus] = useState<string>('');
   const [bulkOrderConfirm, setBulkOrderConfirm] = useState<null | { status: string }>(null);
   const [bulkOrderUpdating, setBulkOrderUpdating] = useState(false);
+  // Products: bulk + view toggle
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const [productConfirm, setProductConfirm] = useState<null | { type: 'delete' | 'bulkDelete' | 'bulkEnable' | 'bulkDisable'; ids: string[] }>(null);
+  const [productView, setProductView] = useState<'table' | 'grid'>('table');
+  // Merchants: bulk + view toggle
+  const [selectedMerchantIds, setSelectedMerchantIds] = useState<Set<string>>(new Set());
+  const [merchantConfirm, setMerchantConfirm] = useState<null | { type: 'bulkApprove' | 'bulkReject' | 'bulkActivate' | 'bulkDeactivate'; ids: string[] }>(null);
+  const [merchantView, setMerchantView] = useState<'table' | 'grid'>('table');
   const [walletRechargeRequests, setWalletRechargeRequests] = useState<WalletRechargeRequest[]>([]);
   const [walletRechargeActionLoadingId, setWalletRechargeActionLoadingId] = useState<string | null>(null);
   const [selectedRechargeRequest, setSelectedRechargeRequest] = useState<WalletRechargeRequest | null>(null);
@@ -622,10 +664,23 @@ export default function AdminClient() {
   const [revenueData, setRevenueData] = useState<RevenuePoint[]>([]);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
   const [topVendors, setTopVendors] = useState<TopVendor[]>([]);
+  const [orders30d, setOrders30d] = useState<OrdersDayPoint[]>([]);
+  const [statusCounts, setStatusCounts] = useState<StatusCount[]>([]);
+  const [topGovernorates, setTopGovernorates] = useState<GovernorateStat[]>([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState('');
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [whatsappSaving, setWhatsappSaving] = useState(false);
+  // Activity center
+  const [activityLog, setActivityLog] = useState<any[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityTotal, setActivityTotal] = useState(0);
+  // Global search
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [globalSearchResults, setGlobalSearchResults] = useState<{ orders: any[]; products: any[]; merchants: any[]; customers: any[] }>({ orders: [], products: [], merchants: [], customers: [] });
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
 
   // ── Users state ───────────────────────────────────────────────────────────────
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -671,6 +726,38 @@ export default function AdminClient() {
     loadMinimumOrder();
   }, [authorized]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Cmd/Ctrl+K to open Global Search
+  useEffect(() => {
+    if (!authorized) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setGlobalSearchOpen(true);
+      }
+      if (e.key === 'Escape' && globalSearchOpen) setGlobalSearchOpen(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [authorized, globalSearchOpen]);
+
+  // Global search debounce
+  useEffect(() => {
+    if (!globalSearchOpen) return;
+    if (!globalSearchQuery.trim() || globalSearchQuery.trim().length < 2) {
+      setGlobalSearchResults({ orders: [], products: [], merchants: [], customers: [] });
+      return;
+    }
+    setGlobalSearchLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await api<typeof globalSearchResults>(`/admin/search?q=${encodeURIComponent(globalSearchQuery.trim())}`);
+        setGlobalSearchResults(res ?? { orders: [], products: [], merchants: [], customers: [] });
+      } catch { /* silent */ }
+      finally { setGlobalSearchLoading(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [globalSearchQuery, globalSearchOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-dismiss success messages after 4.5 s
   useEffect(() => {
     if (!message) return;
@@ -701,6 +788,7 @@ export default function AdminClient() {
     if (activePanel === 'wallet_recharge_requests') loadWalletRechargeRequests();
     if (activePanel === 'wallet_manual_credit') loadUsers();
     if (activePanel === 'wallet_transactions') loadUsers();
+    if (activePanel === 'activity') loadActivityLog(1);
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [authorized, activePanel]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -804,6 +892,7 @@ export default function AdminClient() {
   const toast = {
     success: (msg: string) => setMessage(msg),
     error: (msg: string) => setMessage(msg),
+    info: (msg: string) => setMessage(msg),
   };
 
   async function editMerchantInfo(id: string) {
@@ -1017,6 +1106,40 @@ export default function AdminClient() {
       await refreshAll();
     } catch (e) { toast.error('فشل الحذف: ' + String(e)); }
     finally { setProductActionLoadingId(null); }
+  }
+
+  async function bulkSetProductStatus(ids: string[], status: 'ACTIVE' | 'BLOCKED') {
+    try {
+      await Promise.all(ids.map(id => api(`/admin/products/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })));
+      setProducts(prev => prev.map(p => (ids.includes(p.id) ? { ...p, status } : p)));
+      setSelectedProductIds(new Set());
+      toast.success(`تم ${status === 'ACTIVE' ? 'تفعيل' : 'تعطيل'} ${ids.length} منتج`);
+    } catch {
+      toast.error('فشل تحديث المنتجات');
+    }
+  }
+
+  async function bulkDeleteProducts(ids: string[]) {
+    try {
+      await Promise.all(ids.map(id => api(`/admin/products/${id}`, { method: 'DELETE' })));
+      setProducts(prev => prev.filter(p => !ids.includes(p.id)));
+      setSelectedProductIds(new Set());
+      toast.success(`تم حذف ${ids.length} منتج`);
+    } catch {
+      toast.error('فشل حذف بعض المنتجات');
+    }
+  }
+
+  async function bulkSetMerchantStatus(ids: string[], status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'BLOCKED') {
+    try {
+      await Promise.all(ids.map(id => api(`/admin/merchants/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })));
+      setMerchants(prev => prev.map(m => (ids.includes(m.id) ? { ...m, status } : m)));
+      setSelectedMerchantIds(new Set());
+      const labelMap: Record<string, string> = { APPROVED: 'موافقة', REJECTED: 'رفض', BLOCKED: 'تعطيل', PENDING: 'تحويل لانتظار' };
+      toast.success(`تم ${labelMap[status]} ${ids.length} متجر`);
+    } catch {
+      toast.error('فشل تحديث المتاجر');
+    }
   }
 
 
@@ -1421,18 +1544,35 @@ export default function AdminClient() {
     setAnalyticsLoading(true);
     setAnalyticsError('');
     try {
-      const [rev, tp, tv] = await Promise.all([
+      const [rev, tp, tv, o30, st, gov] = await Promise.all([
         api<RevenuePoint[]>('/admin/analytics/revenue'),
         api<TopProduct[]>('/admin/analytics/top-products'),
         api<TopVendor[]>('/admin/analytics/top-vendors'),
+        api<OrdersDayPoint[]>('/admin/analytics/orders-30d').catch(() => []),
+        api<StatusCount[]>('/admin/analytics/orders-by-status').catch(() => []),
+        api<GovernorateStat[]>('/admin/analytics/top-governorates').catch(() => []),
       ]);
       setRevenueData(rev ?? []);
       setTopProducts(tp ?? []);
       setTopVendors(tv ?? []);
+      setOrders30d(o30 ?? []);
+      setStatusCounts(st ?? []);
+      setTopGovernorates(gov ?? []);
     } catch {
       setAnalyticsError('فشل تحميل بيانات التحليلات — تحقق من الاتصال بالخادم');
     }
     finally { setAnalyticsLoading(false); }
+  }
+
+  async function loadActivityLog(page = 1) {
+    setActivityLoading(true);
+    try {
+      const res = await api<{ activities: any[]; total: number }>(`/admin/activity?page=${page}&pageSize=30`);
+      setActivityLog(res?.activities ?? []);
+      setActivityTotal(res?.total ?? 0);
+      setActivityPage(page);
+    } catch { /* silent */ }
+    finally { setActivityLoading(false); }
   }
 
   // ── Users ─────────────────────────────────────────────────────────────────────
@@ -1795,6 +1935,9 @@ export default function AdminClient() {
             </span>
           </div>
           <div className="topbar-actions">
+            <button className="topbar-btn" onClick={() => { setGlobalSearchOpen(true); setGlobalSearchQuery(''); }} title="Ctrl/Cmd + K">
+              🔍 بحث شامل
+            </button>
             <button className="topbar-btn" onClick={() => setDarkMode(d => !d)}>
               {darkMode ? '☀️ فاتح' : '🌙 داكن'}
             </button>
@@ -1834,10 +1977,10 @@ export default function AdminClient() {
                 </div>
               </div>
 
-              {/* KPI cards */}
+              {/* KPI cards — 8 premium cards */}
               <div className="analytics-grid">
                 {overviewLoading ? (
-                  [0,1,2,3].map(i => (
+                  [0,1,2,3,4,5,6,7].map(i => (
                     <div key={i} className="an-card" style={{ gap: 8 }}>
                       <div className="shimmer-pulse" style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(71,39,21,0.10)' }} />
                       <div className="shimmer-pulse" style={{ height: 11, width: '55%', borderRadius: 6, background: 'rgba(71,39,21,0.08)' }} />
@@ -1847,35 +1990,152 @@ export default function AdminClient() {
                   ))
                 ) : (
                   <>
-                <div className="an-card gold">
-                  <div className="an-card-icon">🏪</div>
-                  <div className="an-card-label">التجار</div>
-                  <div className="an-card-value">{overview.merchants.toLocaleString('ar-EG')}</div>
-                  <div className="an-card-delta neutral">إجمالي المسجّلين</div>
-                </div>
                 <div className="an-card blue">
-                  <div className="an-card-icon">🛒</div>
-                  <div className="an-card-label">المنتجات</div>
-                  <div className="an-card-value">{overview.products.toLocaleString('ar-EG')}</div>
-                  <div className="an-card-delta neutral">منتج نشط</div>
-                </div>
-                <div className="an-card green">
                   <div className="an-card-icon">📦</div>
                   <div className="an-card-label">إجمالي الطلبات</div>
                   <div className="an-card-value">{overview.orders.toLocaleString('ar-EG')}</div>
-                  <div className="an-card-delta up">اليوم: {orderStats.totalToday}</div>
+                </div>
+                <div className="an-card green">
+                  <div className="an-card-icon">🆕</div>
+                  <div className="an-card-label">طلبات اليوم</div>
+                  <div className="an-card-value">{(overview.ordersToday ?? orderStats.totalToday ?? 0).toLocaleString('ar-EG')}</div>
+                </div>
+                <div className="an-card gold">
+                  <div className="an-card-icon">💵</div>
+                  <div className="an-card-label">إيرادات اليوم</div>
+                  <div className="an-card-value" style={{ fontSize: 18 }}>{formatEGP(overview.revenueToday ?? 0)}</div>
+                </div>
+                <div className="an-card orange">
+                  <div className="an-card-icon">📈</div>
+                  <div className="an-card-label">إيرادات هذا الشهر</div>
+                  <div className="an-card-value" style={{ fontSize: 18 }}>{formatEGP(overview.revenueMonth ?? 0)}</div>
+                </div>
+                <div className="an-card blue">
+                  <div className="an-card-icon">👥</div>
+                  <div className="an-card-label">العملاء النشطون</div>
+                  <div className="an-card-value">{(overview.activeCustomers ?? 0).toLocaleString('ar-EG')}</div>
+                </div>
+                <div className="an-card green">
+                  <div className="an-card-icon">🏪</div>
+                  <div className="an-card-label">التجار</div>
+                  <div className="an-card-value">{overview.merchants.toLocaleString('ar-EG')}</div>
+                </div>
+                <div className="an-card gold">
+                  <div className="an-card-icon">🛒</div>
+                  <div className="an-card-label">المنتجات</div>
+                  <div className="an-card-value">{overview.products.toLocaleString('ar-EG')}</div>
                 </div>
                 <div className="an-card orange">
                   <div className="an-card-icon">💰</div>
-                  <div className="an-card-label">المبيعات المسلّمة</div>
-                  <div className="an-card-value" style={{ fontSize: 18 }}>{formatEGP(overview.sales)}</div>
-                  <div className="an-card-delta up">عمولة: {formatEGP(overview.commission)}</div>
+                  <div className="an-card-label">متوسط قيمة الطلب</div>
+                  <div className="an-card-value" style={{ fontSize: 18 }}>{formatEGP(overview.averageOrderValue ?? 0)}</div>
                 </div>
                   </>
                 )}
               </div>
 
-              {/* Revenue chart */}
+              {/* Phase 2: Orders 30d + Revenue 30d charts */}
+              <div className="two-col">
+                <div className="chart-panel">
+                  <h3 className="chart-panel-title">📊 الطلبات آخر 30 يوم</h3>
+                  {(() => {
+                    const data = orders30d;
+                    if (!data.length) return <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>لا توجد بيانات</div>;
+                    const maxV = Math.max(1, ...data.map(d => d.orderCount));
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 140, marginTop: 10, padding: '0 4px' }}>
+                        {data.map((d, i) => (
+                          <div key={d.date} title={`${d.date}: ${d.orderCount} طلب`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                            <div style={{ width: '100%', height: `${(d.orderCount / maxV) * 100}%`, background: 'linear-gradient(180deg, var(--gold), var(--orange))', borderRadius: '4px 4px 0 0', minHeight: d.orderCount > 0 ? 2 : 0 }} />
+                            {(i % 5 === 0) && <span style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'monospace' }}>{d.date.slice(5)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div className="chart-panel">
+                  <h3 className="chart-panel-title">💵 الإيرادات آخر 30 يوم</h3>
+                  {(() => {
+                    const data = orders30d;
+                    if (!data.length) return <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>لا توجد بيانات</div>;
+                    const maxV = Math.max(1, ...data.map(d => d.revenue));
+                    const points = data.map((d, i) => `${(i / (data.length - 1)) * 100},${100 - (d.revenue / maxV) * 90}`).join(' ');
+                    return (
+                      <div style={{ position: 'relative', height: 140, marginTop: 10 }}>
+                        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible' }}>
+                          <polyline points={points} fill="none" stroke="var(--orange)" strokeWidth="0.6" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+                          <polygon points={`${points} 100,100 0,100`} fill="rgba(212,140,28,0.15)" />
+                        </svg>
+                        <div style={{ position: 'absolute', top: 0, right: 0, fontSize: 11, color: 'var(--muted)', fontFamily: 'Cairo' }}>{formatEGP(maxV)}</div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Phase 2: Status distribution + top governorates */}
+              <div className="two-col">
+                <div className="chart-panel">
+                  <h3 className="chart-panel-title">📊 توزيع حالات الطلبات</h3>
+                  {(() => {
+                    const colorMap: Record<string, string> = {
+                      PENDING: '#c8860a', ACCEPTED: '#3b82f6', PREPARING: '#8b5cf6',
+                      OUT_FOR_DELIVERY: '#06b6d4', DELIVERED: '#16a34a', CANCELLED: '#dc2626',
+                    };
+                    const labelMap: Record<string, string> = {
+                      PENDING: 'في الانتظار', ACCEPTED: 'مقبول', PREPARING: 'قيد التحضير',
+                      OUT_FOR_DELIVERY: 'جاري التوصيل', DELIVERED: 'تم التسليم', CANCELLED: 'ملغي',
+                    };
+                    const total = statusCounts.reduce((s, c) => s + c.count, 0);
+                    if (total === 0) return <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>لا توجد بيانات</div>;
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                        {statusCounts.map(s => {
+                          const pct = (s.count / total) * 100;
+                          return (
+                            <div key={s.status}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Cairo', fontSize: 12, marginBottom: 4 }}>
+                                <span>{labelMap[s.status] ?? s.status}</span>
+                                <strong style={{ color: colorMap[s.status] ?? 'var(--brown)' }}>{s.count} ({pct.toFixed(1)}%)</strong>
+                              </div>
+                              <div style={{ height: 6, background: 'rgba(71,39,21,0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                                <div style={{ width: `${pct}%`, height: '100%', background: colorMap[s.status] ?? 'var(--brown)' }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div className="chart-panel">
+                  <h3 className="chart-panel-title">🗺 أعلى المحافظات</h3>
+                  {topGovernorates.length === 0 ? (
+                    <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>لا توجد بيانات</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                      {topGovernorates.slice(0, 8).map((g, i) => {
+                        const max = topGovernorates[0].totalRevenue;
+                        const pct = max > 0 ? (g.totalRevenue / max) * 100 : 0;
+                        return (
+                          <div key={i}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Cairo', fontSize: 12, marginBottom: 3 }}>
+                              <span>{g.governorate}</span>
+                              <strong style={{ color: 'var(--orange)' }}>{formatEGP(g.totalRevenue)} · {g.orderCount} طلب</strong>
+                            </div>
+                            <div style={{ height: 5, background: 'rgba(71,39,21,0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, var(--gold), var(--orange))' }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Existing 14-day chart + today status */}
               <div className="two-col">
                 <div className="chart-panel">
                   <h3 className="chart-panel-title">📈 إيرادات آخر 14 يوم</h3>
@@ -2176,6 +2436,20 @@ export default function AdminClient() {
                   <p className="pg-subtitle">إنشاء التجار وإدارة حالاتهم وصورهم ومعلوماتهم</p>
                 </div>
                 <div className="pg-actions">
+                  <button className="topbar-btn" onClick={() => {
+                    const target = selectedMerchantIds.size > 0
+                      ? merchants.filter(m => selectedMerchantIds.has(m.id))
+                      : merchants.filter(m => {
+                          const matchStatus = merchantStatusFilter === 'ALL' || m.status === merchantStatusFilter;
+                          const q = merchantSearch.toLowerCase();
+                          return matchStatus && (!q || m.storeName.toLowerCase().includes(q) || m.user.phone.includes(q));
+                        });
+                    if (target.length === 0) { toast.info('لا توجد متاجر للتصدير'); return; }
+                    downloadCSV('merchants', ['ID', 'اسم المتجر', 'الهاتف', 'الحالة', 'العنوان', 'العمولة', 'تاريخ الانضمام'], target, (m: Merchant) => [
+                      m.id, m.storeName, m.user?.phone ?? '', m.status, m.address ?? '', m.commissionPercentage ?? '', formatDate((m as any).createdAt ?? ''),
+                    ]);
+                    toast.success(`تصدير ${target.length} ${selectedMerchantIds.size > 0 ? 'متجر محدد' : 'متجر'}`);
+                  }}>📊 تصدير CSV</button>
                   <button
                     className="btn-primary"
                     onClick={() => setShowCreateMerchant(true)}
@@ -2202,36 +2476,209 @@ export default function AdminClient() {
                 })}
               </div>
 
-              {/* Search */}
-              <div style={{ marginBottom: 16 }}>
+              {/* Search + view toggle */}
+              <div style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                 <input
                   type="text"
                   placeholder="بحث باسم المتجر أو رقم الهاتف..."
                   value={merchantSearch}
                   onChange={e => setMerchantSearch(e.target.value)}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }}
+                  style={{ flex: 1, minWidth: 220, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)', boxSizing: 'border-box' }}
                 />
+                <div style={{ display: 'flex', gap: 4, padding: 4, background: 'rgba(71,39,21,0.05)', borderRadius: 10 }}>
+                  <button
+                    onClick={() => setMerchantView('table')}
+                    style={{ padding: '5px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'Cairo', fontSize: 12, fontWeight: 700, background: merchantView === 'table' ? 'var(--brown)' : 'transparent', color: merchantView === 'table' ? 'var(--cream)' : 'var(--muted)' }}
+                  >
+                    📋 جدول
+                  </button>
+                  <button
+                    onClick={() => setMerchantView('grid')}
+                    style={{ padding: '5px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'Cairo', fontSize: 12, fontWeight: 700, background: merchantView === 'grid' ? 'var(--brown)' : 'transparent', color: merchantView === 'grid' ? 'var(--cream)' : 'var(--muted)' }}
+                  >
+                    🔳 شبكة
+                  </button>
+                </div>
               </div>
 
-              {/* List */}
-              <div className="list-panel">
-                <div className="lp-head">
-                  <h3>قائمة التجار ({merchants.filter(m => {
-                    const matchStatus = merchantStatusFilter === 'ALL' || m.status === merchantStatusFilter;
-                    const q = merchantSearch.toLowerCase();
-                    const matchSearch = !q || m.storeName.toLowerCase().includes(q) || m.user.phone.includes(q);
-                    return matchStatus && matchSearch;
-                  }).length})</h3>
-                </div>
-                <div className="lp-body">
-                  {merchants
-                    .filter(m => {
-                      const matchStatus = merchantStatusFilter === 'ALL' || m.status === merchantStatusFilter;
-                      const q = merchantSearch.toLowerCase();
-                      const matchSearch = !q || m.storeName.toLowerCase().includes(q) || m.user.phone.includes(q);
-                      return matchStatus && matchSearch;
-                    })
-                    .map(merchant => (
+              {(() => {
+                const filteredMerchants = merchants.filter(m => {
+                  const matchStatus = merchantStatusFilter === 'ALL' || m.status === merchantStatusFilter;
+                  const q = merchantSearch.toLowerCase();
+                  const matchSearch = !q || m.storeName.toLowerCase().includes(q) || m.user.phone.includes(q);
+                  return matchStatus && matchSearch;
+                });
+
+                if (merchantView === 'table') {
+                  const filteredIds = filteredMerchants.map(m => m.id);
+                  const allSelected = filteredIds.length > 0 && filteredIds.every(id => selectedMerchantIds.has(id));
+                  const someSelected = filteredIds.some(id => selectedMerchantIds.has(id)) && !allSelected;
+                  const toggleAll = () => {
+                    setSelectedMerchantIds(prev => {
+                      const next = new Set(prev);
+                      if (allSelected) filteredIds.forEach(id => next.delete(id));
+                      else filteredIds.forEach(id => next.add(id));
+                      return next;
+                    });
+                  };
+                  const toggleOne = (id: string) => {
+                    setSelectedMerchantIds(prev => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    });
+                  };
+                  const statusMeta: Record<string, { label: string; color: string }> = {
+                    APPROVED: { label: '✓ موافق', color: '#16a34a' },
+                    PENDING: { label: '⏳ انتظار', color: '#d97706' },
+                    REJECTED: { label: '✕ مرفوض', color: '#dc2626' },
+                    BLOCKED: { label: '🔒 محظور', color: '#7c2d12' },
+                  };
+
+                  return (
+                    <>
+                      <div className="admin-table-wrap">
+                        <table className="admin-table">
+                          <thead>
+                            <tr>
+                              <th className="checkbox-col">
+                                <AdminCheckbox checked={allSelected} indeterminate={someSelected} onChange={toggleAll} ariaLabel="تحديد الكل" />
+                              </th>
+                              <th>الشعار</th>
+                              <th>اسم المتجر</th>
+                              <th>الهاتف</th>
+                              <th>المنتجات</th>
+                              <th>الطلبات</th>
+                              <th>الحالة</th>
+                              <th>تاريخ الانضمام</th>
+                              <th>إجراءات</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredMerchants.map(merchant => {
+                              const isSelected = selectedMerchantIds.has(merchant.id);
+                              const meta = statusMeta[merchant.status] ?? { label: merchant.status, color: 'var(--muted)' };
+                              const productCount = (merchant as any)?._count?.products ?? '—';
+                              const orderCount = (merchant as any)?._count?.orders ?? '—';
+                              return (
+                                <tr key={merchant.id} className={isSelected ? 'row-selected' : ''}>
+                                  <td className="checkbox-col">
+                                    <AdminCheckbox checked={isSelected} onChange={() => toggleOne(merchant.id)} ariaLabel={`تحديد ${merchant.storeName}`} />
+                                  </td>
+                                  <td>
+                                    {merchant.logoUrl ? (
+                                      <img src={merchant.logoUrl} alt="logo" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(71,39,21,0.10)' }} />
+                                    ) : (
+                                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: meta.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>
+                                        {merchant.storeName.charAt(0)}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td style={{ fontWeight: 700 }} title={merchant.storeName}>
+                                    {merchant.storeName}
+                                    {merchant.address && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginTop: 2 }}>{merchant.address}</div>}
+                                  </td>
+                                  <td dir="ltr" style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--muted)' }}>{merchant.user.phone}</td>
+                                  <td style={{ textAlign: 'center' }}>{productCount}</td>
+                                  <td style={{ textAlign: 'center' }}>{orderCount}</td>
+                                  <td>
+                                    <AdminStatusBadge label={meta.label} color={meta.color} />
+                                  </td>
+                                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDate((merchant as any).createdAt ?? '')}</td>
+                                  <td>
+                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                      <button className="admin-row-btn" onClick={() => {
+                                        setEditingMerchant(merchant);
+                                        setEditMerchantForm({
+                                          storeName: merchant.storeName,
+                                          description: merchant.description ?? '',
+                                          address: merchant.address ?? '',
+                                          businessHours: merchant.businessHours ?? '',
+                                          commissionPercentage: merchant.commissionPercentage != null ? String(merchant.commissionPercentage) : '',
+                                        });
+                                      }}>✏️ تعديل</button>
+                                      {merchant.status === 'PENDING' && (
+                                        <>
+                                          <button className="admin-row-btn success" onClick={() => updateMerchantStatus(merchant.id, 'APPROVED')}>✓ قبول</button>
+                                          <button className="admin-row-btn danger" onClick={() => updateMerchantStatus(merchant.id, 'REJECTED')}>✕ رفض</button>
+                                        </>
+                                      )}
+                                      {merchant.status === 'APPROVED' && (
+                                        <button className="admin-row-btn danger" onClick={() => updateMerchantStatus(merchant.id, 'BLOCKED')}>🔒 تعطيل</button>
+                                      )}
+                                      {merchant.status === 'BLOCKED' && (
+                                        <button className="admin-row-btn success" onClick={() => updateMerchantStatus(merchant.id, 'APPROVED')}>🔓 تفعيل</button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {filteredMerchants.length === 0 && (
+                              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>
+                                {merchants.length === 0 ? 'لا يوجد تجار بعد' : 'لا توجد نتائج مطابقة'}
+                              </td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <AdminBulkActionBar
+                        count={selectedMerchantIds.size}
+                        label="متجر محدد"
+                        onClear={() => setSelectedMerchantIds(new Set())}
+                      >
+                        <button className="admin-bulk-action success" onClick={() => setMerchantConfirm({ type: 'bulkApprove', ids: Array.from(selectedMerchantIds) })}>
+                          ✓ موافقة
+                        </button>
+                        <button className="admin-bulk-action danger" onClick={() => setMerchantConfirm({ type: 'bulkReject', ids: Array.from(selectedMerchantIds) })}>
+                          ✕ رفض
+                        </button>
+                        <button className="admin-bulk-action success" onClick={() => setMerchantConfirm({ type: 'bulkActivate', ids: Array.from(selectedMerchantIds) })}>
+                          🔓 تفعيل
+                        </button>
+                        <button className="admin-bulk-action warning" onClick={() => setMerchantConfirm({ type: 'bulkDeactivate', ids: Array.from(selectedMerchantIds) })}>
+                          🔒 تعطيل
+                        </button>
+                      </AdminBulkActionBar>
+
+                      <AdminConfirmDialog
+                        open={!!merchantConfirm}
+                        variant={merchantConfirm?.type === 'bulkReject' || merchantConfirm?.type === 'bulkDeactivate' ? 'danger' : 'warning'}
+                        title={
+                          merchantConfirm?.type === 'bulkApprove' ? `الموافقة على ${merchantConfirm.ids.length} متجر` :
+                          merchantConfirm?.type === 'bulkReject' ? `رفض ${merchantConfirm.ids.length} متجر` :
+                          merchantConfirm?.type === 'bulkActivate' ? `تفعيل ${merchantConfirm.ids.length} متجر` :
+                          merchantConfirm?.type === 'bulkDeactivate' ? `تعطيل ${merchantConfirm.ids.length} متجر` : ''
+                        }
+                        message={`سيتم تطبيق العملية على ${merchantConfirm?.ids.length ?? 0} متجر. هل أنت متأكد؟`}
+                        confirmLabel="نعم، تطبيق"
+                        onConfirm={() => {
+                          if (!merchantConfirm) return;
+                          const map: Record<typeof merchantConfirm.type, 'PENDING' | 'APPROVED' | 'REJECTED' | 'BLOCKED'> = {
+                            bulkApprove: 'APPROVED',
+                            bulkReject: 'REJECTED',
+                            bulkActivate: 'APPROVED',
+                            bulkDeactivate: 'BLOCKED',
+                          };
+                          bulkSetMerchantStatus(merchantConfirm.ids, map[merchantConfirm.type]);
+                          setMerchantConfirm(null);
+                        }}
+                        onCancel={() => setMerchantConfirm(null)}
+                      />
+                    </>
+                  );
+                }
+
+                /* Grid view (existing card-row layout) */
+                return (
+                  <div className="list-panel">
+                    <div className="lp-head">
+                      <h3>قائمة التجار ({filteredMerchants.length})</h3>
+                    </div>
+                    <div className="lp-body">
+                      {filteredMerchants.map(merchant => (
                     <div className="lp-row" key={merchant.id} style={{ gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                       {/* Logo avatar */}
                       <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -2348,17 +2795,15 @@ export default function AdminClient() {
                       </div>
                     </div>
                   ))}
-                  {merchants.filter(m => {
-                    const matchStatus = merchantStatusFilter === 'ALL' || m.status === merchantStatusFilter;
-                    const q = merchantSearch.toLowerCase();
-                    return (merchantStatusFilter === 'ALL' || matchStatus) && (!q || m.storeName.toLowerCase().includes(q) || m.user.phone.includes(q));
-                  }).length === 0 && (
+                  {filteredMerchants.length === 0 && (
                     <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>
                       لا يوجد تجار
                     </div>
                   )}
                 </div>
               </div>
+                );
+              })()}
 
               {/* ── Edit Merchant Modal ────────────────────────────────── */}
               {editingMerchant && (
@@ -2508,6 +2953,21 @@ export default function AdminClient() {
                 </div>
                 <div className="pg-actions">
                   <button className="topbar-btn" onClick={refreshAll}>🔄 تحديث</button>
+                  <button className="topbar-btn" onClick={() => {
+                    const target = selectedProductIds.size > 0
+                      ? products.filter(p => selectedProductIds.has(p.id))
+                      : products.filter(p => {
+                          const q = productSearch.toLowerCase();
+                          const nameMatch = !q || p.name.toLowerCase().includes(q);
+                          const mMatch = productMerchantFilter === 'ALL' || p.merchantId === productMerchantFilter;
+                          return nameMatch && mMatch;
+                        });
+                    if (target.length === 0) { toast.info('لا توجد منتجات للتصدير'); return; }
+                    downloadCSV('products', ['ID', 'الاسم', 'المتجر', 'الفئة', 'السعر', 'السعر القديم', 'المخزون', 'الحالة'], target, (p: Product) => [
+                      p.id, p.name, p.merchant?.storeName ?? '', p.category?.name ?? '', Number(p.price).toFixed(2), p.oldPrice != null ? Number(p.oldPrice).toFixed(2) : '', p.stock, p.status,
+                    ]);
+                    toast.success(`تصدير ${target.length} ${selectedProductIds.size > 0 ? 'منتج محدد' : 'منتج'}`);
+                  }}>📊 تصدير CSV</button>
                   <button
                     onClick={openCreateProduct}
                     style={{ padding: '9px 18px', borderRadius: 12, background: 'linear-gradient(135deg,var(--orange),var(--gold))', color: '#fff', fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', boxShadow: '0 2px 8px rgba(212,140,28,0.35)' }}
@@ -2537,18 +2997,169 @@ export default function AdminClient() {
                   <option value="ALL">كل المتاجر</option>
                   {merchants.map(m => <option key={m.id} value={m.id}>{m.storeName}</option>)}
                 </select>
+                <div style={{ marginRight: 'auto', display: 'flex', gap: 4, padding: 4, background: 'rgba(71,39,21,0.05)', borderRadius: 10 }}>
+                  <button
+                    onClick={() => setProductView('table')}
+                    style={{ padding: '5px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'Cairo', fontSize: 12, fontWeight: 700, background: productView === 'table' ? 'var(--brown)' : 'transparent', color: productView === 'table' ? 'var(--cream)' : 'var(--muted)' }}
+                  >
+                    📋 جدول
+                  </button>
+                  <button
+                    onClick={() => setProductView('grid')}
+                    style={{ padding: '5px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'Cairo', fontSize: 12, fontWeight: 700, background: productView === 'grid' ? 'var(--brown)' : 'transparent', color: productView === 'grid' ? 'var(--cream)' : 'var(--muted)' }}
+                  >
+                    🔳 شبكة
+                  </button>
+                </div>
               </div>
 
-              {/* Products grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>
-                {products
-                  .filter(p => {
-                    const q = productSearch.toLowerCase();
-                    const nameMatch = !q || p.name.toLowerCase().includes(q);
-                    const mMatch = productMerchantFilter === 'ALL' || p.merchantId === productMerchantFilter;
-                    return nameMatch && mMatch;
-                  })
-                  .map(product => (
+              {(() => {
+                const q = productSearch.toLowerCase();
+                const filteredProducts = products.filter(p => {
+                  const nameMatch = !q || p.name.toLowerCase().includes(q);
+                  const mMatch = productMerchantFilter === 'ALL' || p.merchantId === productMerchantFilter;
+                  return nameMatch && mMatch;
+                });
+                const filteredIds = filteredProducts.map(p => p.id);
+                const allSelected = filteredIds.length > 0 && filteredIds.every(id => selectedProductIds.has(id));
+                const someSelected = filteredIds.some(id => selectedProductIds.has(id)) && !allSelected;
+                const toggleAll = () => {
+                  setSelectedProductIds(prev => {
+                    const next = new Set(prev);
+                    if (allSelected) filteredIds.forEach(id => next.delete(id));
+                    else filteredIds.forEach(id => next.add(id));
+                    return next;
+                  });
+                };
+                const toggleOne = (id: string) => {
+                  setSelectedProductIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  });
+                };
+
+                if (productView === 'table') {
+                  return (
+                    <div className="admin-table-wrap">
+                      <table className="admin-table">
+                        <thead>
+                          <tr>
+                            <th className="checkbox-col">
+                              <AdminCheckbox checked={allSelected} indeterminate={someSelected} onChange={toggleAll} ariaLabel="تحديد الكل" />
+                            </th>
+                            <th>الصورة</th>
+                            <th>اسم المنتج</th>
+                            <th>المتجر</th>
+                            <th>الفئة</th>
+                            <th>السعر</th>
+                            <th>المخزون</th>
+                            <th>الحالة</th>
+                            <th>إجراءات</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredProducts.map(product => {
+                            const isSelected = selectedProductIds.has(product.id);
+                            return (
+                              <tr key={product.id} className={isSelected ? 'row-selected' : ''}>
+                                <td className="checkbox-col">
+                                  <AdminCheckbox checked={isSelected} onChange={() => toggleOne(product.id)} ariaLabel={`تحديد ${product.name}`} />
+                                </td>
+                                <td>
+                                  {product.imageUrl ? (
+                                    <img src={product.imageUrl.startsWith('/') ? `${apiUrl}${product.imageUrl}` : product.imageUrl}
+                                      alt={product.name}
+                                      style={{ width: 38, height: 38, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(71,39,21,0.10)' }} />
+                                  ) : (
+                                    <div style={{ width: 38, height: 38, borderRadius: 8, background: 'linear-gradient(135deg,#fef3c7,#fde68a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🛒</div>
+                                  )}
+                                </td>
+                                <td style={{ fontWeight: 700, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={product.name}>{product.name}</td>
+                                <td style={{ color: 'var(--muted)', fontSize: 12 }}>{product.merchant.storeName}</td>
+                                <td style={{ color: 'var(--muted)', fontSize: 12 }}>{product.category?.name || '—'}</td>
+                                <td style={{ fontWeight: 800, color: 'var(--orange)' }}>{formatEGP(product.price)}</td>
+                                <td style={{ textAlign: 'center', color: product.stock === 0 ? '#dc2626' : 'var(--brown)', fontWeight: 700 }}>
+                                  {product.stock === 0 ? 'نفد' : product.stock}
+                                </td>
+                                <td>
+                                  <AdminStatusBadge
+                                    label={product.status === 'ACTIVE' ? '✓ نشط' : '✕ محظور'}
+                                    color={product.status === 'ACTIVE' ? '#16a34a' : '#dc2626'}
+                                  />
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    <button className="admin-row-btn" onClick={() => openEditProduct(product)}>✏️ تعديل</button>
+                                    <button
+                                      className={`admin-row-btn ${product.status === 'ACTIVE' ? 'danger' : 'success'}`}
+                                      onClick={() => updateProduct(product.id, product.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE')}
+                                      disabled={productActionLoadingId === product.id}
+                                    >
+                                      {product.status === 'ACTIVE' ? '✕ تعطيل' : '✓ تفعيل'}
+                                    </button>
+                                    <button className="admin-row-btn danger" onClick={() => setProductConfirm({ type: 'delete', ids: [product.id] })}>🗑️</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {filteredProducts.length === 0 && (
+                            <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>
+                              {products.length === 0 ? 'لا توجد منتجات بعد' : 'لا توجد منتجات مطابقة'}
+                            </td></tr>
+                          )}
+                        </tbody>
+                      </table>
+
+                      {/* Bulk action bar */}
+                      <AdminBulkActionBar
+                        count={selectedProductIds.size}
+                        label="منتج محدد"
+                        onClear={() => setSelectedProductIds(new Set())}
+                      >
+                        <button className="admin-bulk-action success" onClick={() => bulkSetProductStatus(Array.from(selectedProductIds), 'ACTIVE')}>
+                          ✓ تفعيل
+                        </button>
+                        <button className="admin-bulk-action warning" onClick={() => bulkSetProductStatus(Array.from(selectedProductIds), 'BLOCKED')}>
+                          ✕ تعطيل
+                        </button>
+                        <button className="admin-bulk-action danger" onClick={() => setProductConfirm({ type: 'bulkDelete', ids: Array.from(selectedProductIds) })}>
+                          🗑️ حذف
+                        </button>
+                      </AdminBulkActionBar>
+
+                      {/* Confirm dialog (shared for delete + bulkDelete) */}
+                      <AdminConfirmDialog
+                        open={!!productConfirm}
+                        variant="danger"
+                        title={productConfirm?.type === 'delete' ? 'حذف المنتج' : `حذف ${productConfirm?.ids.length ?? 0} منتج`}
+                        message={productConfirm?.type === 'delete'
+                          ? 'هل أنت متأكد من حذف هذا المنتج نهائيًا؟ لا يمكن التراجع.'
+                          : `سيتم حذف ${productConfirm?.ids.length ?? 0} منتج بشكل نهائي. لا يمكن التراجع.`}
+                        confirmLabel="نعم، حذف"
+                        onConfirm={() => {
+                          if (!productConfirm) return;
+                          if (productConfirm.type === 'delete') {
+                            api(`/admin/products/${productConfirm.ids[0]}`, { method: 'DELETE' })
+                              .then(() => { setProducts(prev => prev.filter(p => p.id !== productConfirm.ids[0])); toast.success('تم حذف المنتج'); })
+                              .catch(() => toast.error('فشل الحذف'));
+                          } else {
+                            bulkDeleteProducts(productConfirm.ids);
+                          }
+                          setProductConfirm(null);
+                        }}
+                        onCancel={() => setProductConfirm(null)}
+                      />
+                    </div>
+                  );
+                }
+
+                /* Grid view (existing) */
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>
+                    {filteredProducts.map(product => (
                     <div key={product.id} style={{ background: 'var(--paper)', borderRadius: 16, boxShadow: '0 2px 12px rgba(71,39,21,0.08)', border: '1px solid rgba(71,39,21,0.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                       {/* Image */}
                       <div style={{ height: 160, background: 'linear-gradient(135deg,#fef3c7,#fde68a)', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
@@ -2616,17 +3227,14 @@ export default function AdminClient() {
                       </div>
                     </div>
                   ))}
-                {products.filter(p => {
-                  const q = productSearch.toLowerCase();
-                  const nameMatch = !q || p.name.toLowerCase().includes(q);
-                  const mMatch = productMerchantFilter === 'ALL' || p.merchantId === productMerchantFilter;
-                  return nameMatch && mMatch;
-                }).length === 0 && (
+                {filteredProducts.length === 0 && (
                   <div style={{ gridColumn: '1/-1', padding: '60px 0', textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo', fontSize: 15 }}>
                     📦 لا توجد منتجات
                   </div>
                 )}
               </div>
+                );
+              })()}
 
               {/* ── Create / Edit Product Modal ───────────────────── */}
               {showCreateProduct && (
@@ -2808,6 +3416,15 @@ export default function AdminClient() {
                     onChange={e => setUserSearch(e.target.value)}
                     style={{ padding: '8px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, direction: 'rtl', background: 'var(--paper)', color: 'var(--brown)', minWidth: 240 }}
                   />
+                  <button className="topbar-btn" onClick={() => {
+                    const q = userSearch.toLowerCase();
+                    const target = users.filter(u => !q || (u.name ?? '').toLowerCase().includes(q) || (u.phone ?? '').includes(q));
+                    if (target.length === 0) { toast.info('لا يوجد عملاء للتصدير'); return; }
+                    downloadCSV('customers', ['ID', 'الاسم', 'الهاتف', 'الرصيد', 'تاريخ التسجيل'], target, (u: AdminUser) => [
+                      u.id, u.name ?? '', u.phone ?? '', u.walletBalance ?? '0', formatDate((u as any).createdAt ?? ''),
+                    ]);
+                    toast.success(`تصدير ${target.length} عميل`);
+                  }}>📊 تصدير CSV</button>
                 </div>
               </div>
 
@@ -4223,6 +4840,83 @@ export default function AdminClient() {
           )}
 
           {/* ════════════════════════════════════════════════════════
+              ACTIVITY CENTER PANEL (Phase 2)
+             ════════════════════════════════════════════════════════ */}
+          {activePanel === 'activity' && (
+            <div>
+              <AdminPageHeader
+                title="سجل النشاط"
+                subtitle="جميع الإجراءات التي تمت من قبل المشرفين"
+                badge={`${activityTotal.toLocaleString('ar-EG')} سجل`}
+                actions={
+                  <button className="topbar-btn" onClick={() => loadActivityLog(activityPage)}>🔄 تحديث</button>
+                }
+              />
+
+              {activityLoading ? (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>جاري التحميل...</div>
+              ) : (
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>المشرف</th>
+                        <th>الإجراء</th>
+                        <th>النوع</th>
+                        <th>الكيان</th>
+                        <th>الوصف</th>
+                        <th>التاريخ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activityLog.map((a: any) => {
+                        const typeColor: Record<string, string> = {
+                          ORDER: '#3b82f6', MERCHANT: '#d4a437', PRODUCT: '#ce7c29',
+                          USER: '#7c3aed', SETTING: '#7c2d12', SHIPPING_ZONE: '#06b6d4',
+                          NOTIFICATION: '#16a34a', BANNER: '#ec4899', CATEGORY: '#0891b2',
+                        };
+                        const actionColor: Record<string, string> = {
+                          CREATE: '#16a34a', UPDATE: '#3b82f6', DELETE: '#dc2626',
+                          APPROVE: '#16a34a', REJECT: '#dc2626', BLOCK: '#7c2d12',
+                        };
+                        const c = typeColor[a.entityType] ?? 'var(--muted)';
+                        const ac = actionColor[a.action] ?? 'var(--brown)';
+                        return (
+                          <tr key={a.id}>
+                            <td style={{ fontWeight: 700 }}>
+                              {a.adminUser?.name ?? a.actorUsername}
+                              {a.adminUser?.username && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>@{a.adminUser.username}</div>}
+                            </td>
+                            <td><AdminStatusBadge label={a.action} color={ac} /></td>
+                            <td><AdminStatusBadge label={a.entityType} color={c} /></td>
+                            <td style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)' }}>{a.entityId ? a.entityId.slice(-8) : '—'}</td>
+                            <td style={{ fontSize: 12 }}>{a.description ?? '—'}</td>
+                            <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDate(a.createdAt)}</td>
+                          </tr>
+                        );
+                      })}
+                      {activityLog.length === 0 && (
+                        <tr><td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>لا يوجد نشاط مسجل بعد</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Pagination */}
+              {activityTotal > 30 && (
+                <div className="pagination" style={{ marginTop: 16 }}>
+                  <span className="pagination-info">{activityTotal.toLocaleString('ar-EG')} سجل — صفحة {activityPage} من {Math.ceil(activityTotal / 30)}</span>
+                  <div className="pagination-btns">
+                    <button disabled={activityPage <= 1} onClick={() => loadActivityLog(activityPage - 1)}>‹</button>
+                    <button disabled={activityPage * 30 >= activityTotal} onClick={() => loadActivityLog(activityPage + 1)}>›</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ════════════════════════════════════════════════════════
               ROADMAP PANEL
              ════════════════════════════════════════════════════════ */}
           {activePanel === 'roadmap' && (
@@ -4415,6 +5109,142 @@ export default function AdminClient() {
                 />
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════
+          GLOBAL SEARCH OVERLAY (Phase 2 - Cmd/Ctrl+K)
+         ════════════════════════════════════════════════════════ */}
+      {globalSearchOpen && (
+        <div
+          className="modal-overlay"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 16px 16px', overflowY: 'auto' }}
+          onClick={() => setGlobalSearchOpen(false)}
+        >
+          <div
+            className="modal-card"
+            style={{ width: '100%', maxWidth: 640, background: 'var(--paper)', borderRadius: 20, boxShadow: '0 20px 60px rgba(0,0,0,0.30)', fontFamily: 'Cairo' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid rgba(71,39,21,0.08)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 18 }}>🔍</span>
+              <input
+                autoFocus
+                type="text"
+                value={globalSearchQuery}
+                onChange={e => setGlobalSearchQuery(e.target.value)}
+                placeholder="ابحث عن طلب، منتج، تاجر، أو عميل..."
+                style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, fontFamily: 'Cairo', background: 'transparent', color: 'var(--brown)', padding: '4px 0' }}
+              />
+              <span style={{ fontSize: 11, padding: '3px 8px', background: 'rgba(71,39,21,0.08)', borderRadius: 6, color: 'var(--muted)' }}>ESC</span>
+            </div>
+
+            {globalSearchQuery.trim().length < 2 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>
+                اكتب حرفين على الأقل للبحث
+              </div>
+            ) : globalSearchLoading ? (
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>جاري البحث...</div>
+            ) : (() => {
+              const totalResults = globalSearchResults.orders.length + globalSearchResults.products.length + globalSearchResults.merchants.length + globalSearchResults.customers.length;
+              if (totalResults === 0) {
+                return <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>لا توجد نتائج</div>;
+              }
+              return (
+                <div style={{ maxHeight: '60vh', overflowY: 'auto', padding: 8 }}>
+                  {globalSearchResults.orders.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--muted)', fontWeight: 800, letterSpacing: 0.5 }}>📦 الطلبات ({globalSearchResults.orders.length})</div>
+                      {globalSearchResults.orders.map((o: any) => (
+                        <div key={o.id}
+                          onClick={() => { setGlobalSearchOpen(false); setActivePanel('orders'); setOrderSearch(o.customerName); }}
+                          style={{ padding: '10px 14px', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, transition: 'background .12s' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(236, 184, 54, 0.10)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <div>
+                            <strong>#{o.id.slice(-6).toUpperCase()}</strong> · {o.customerName}
+                            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }} dir="ltr">{o.customerPhone}</div>
+                          </div>
+                          <div style={{ textAlign: 'left' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--orange)' }}>{formatEGP(o.total)}</div>
+                            <AdminStatusBadge label={ORDER_STATUS_AR[o.status as keyof typeof ORDER_STATUS_AR] ?? o.status} color={ORDER_STATUS_COLOR[o.status as keyof typeof ORDER_STATUS_COLOR] ?? '#888'} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {globalSearchResults.products.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--muted)', fontWeight: 800, letterSpacing: 0.5 }}>🛒 المنتجات ({globalSearchResults.products.length})</div>
+                      {globalSearchResults.products.map((p: any) => (
+                        <div key={p.id}
+                          onClick={() => { setGlobalSearchOpen(false); setActivePanel('products'); setProductSearch(p.name); }}
+                          style={{ padding: '10px 14px', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, transition: 'background .12s' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(236, 184, 54, 0.10)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          {p.imageUrl ? (
+                            <img src={p.imageUrl.startsWith('/') ? `${apiUrl}${p.imageUrl}` : p.imageUrl} style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover' }} alt="" />
+                          ) : (
+                            <div style={{ width: 32, height: 32, borderRadius: 6, background: 'rgba(71,39,21,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>🛒</div>
+                          )}
+                          <div style={{ flex: 1 }}>
+                            <strong>{p.name}</strong>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.merchant?.storeName ?? ''}</div>
+                          </div>
+                          <div style={{ fontWeight: 700, color: 'var(--orange)' }}>{formatEGP(p.price)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {globalSearchResults.merchants.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--muted)', fontWeight: 800, letterSpacing: 0.5 }}>🏪 التجار ({globalSearchResults.merchants.length})</div>
+                      {globalSearchResults.merchants.map((m: any) => (
+                        <div key={m.id}
+                          onClick={() => { setGlobalSearchOpen(false); setActivePanel('merchants'); setMerchantSearch(m.storeName); }}
+                          style={{ padding: '10px 14px', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, transition: 'background .12s' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(236, 184, 54, 0.10)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          {m.logoUrl ? (
+                            <img src={m.logoUrl} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} alt="" />
+                          ) : (
+                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--brown)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>{m.storeName?.charAt(0)}</div>
+                          )}
+                          <div style={{ flex: 1 }}>
+                            <strong>{m.storeName}</strong>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }} dir="ltr">{m.user?.phone ?? ''}</div>
+                          </div>
+                          <AdminStatusBadge label={m.status} color={m.status === 'APPROVED' ? '#16a34a' : m.status === 'PENDING' ? '#d97706' : '#dc2626'} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {globalSearchResults.customers.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--muted)', fontWeight: 800, letterSpacing: 0.5 }}>👤 العملاء ({globalSearchResults.customers.length})</div>
+                      {globalSearchResults.customers.map((u: any) => (
+                        <div key={u.id}
+                          onClick={() => { setGlobalSearchOpen(false); setActivePanel('users'); setUserSearch(u.name ?? u.phone ?? ''); }}
+                          style={{ padding: '10px 14px', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, transition: 'background .12s' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(236, 184, 54, 0.10)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(71,39,21,0.10)', color: 'var(--brown)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>👤</div>
+                          <div style={{ flex: 1 }}>
+                            <strong>{u.name ?? '—'}</strong>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }} dir="ltr">{u.phone}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
