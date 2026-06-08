@@ -310,6 +310,184 @@ function HomeCmsPageWrapper({ token, apiBase }: { token: string; apiBase: string
   return <HomeCmsPage token={token} apiBase={apiBase} onToast={addToast} />;
 }
 
+// ── Shared admin polish components (Phase 1) ──────────────────────────────────
+
+function AdminPageHeader({
+  title,
+  subtitle,
+  badge,
+  actions,
+}: {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <div className="admin-page-header">
+      <div className="left">
+        <h2>
+          {title}
+          {badge && <span className="badge">{badge}</span>}
+        </h2>
+        {subtitle && <p className="subtitle">{subtitle}</p>}
+      </div>
+      {actions && <div className="actions">{actions}</div>}
+    </div>
+  );
+}
+
+function AdminSearchInput({
+  value,
+  onChange,
+  placeholder = 'بحث...',
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div className="admin-search">
+      <span className="icon">🔍</span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+      {value && (
+        <button className="clear" onClick={() => onChange('')} title="مسح" aria-label="clear">
+          ✕
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AdminStatusBadge({ label, color }: { label: string; color: string }) {
+  return (
+    <span
+      className="admin-status-badge"
+      style={{
+        background: `${color}1f`,
+        color,
+        borderColor: `${color}55`,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function AdminCheckbox({
+  checked,
+  indeterminate = false,
+  onChange,
+  ariaLabel,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onChange: () => void;
+  ariaLabel?: string;
+}) {
+  const cls =
+    'admin-cb' + (indeterminate ? ' indeterminate' : checked ? ' checked' : '');
+  return (
+    <span
+      className={cls}
+      role="checkbox"
+      aria-checked={indeterminate ? 'mixed' : checked}
+      aria-label={ariaLabel}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          onChange();
+        }
+      }}
+      tabIndex={0}
+    >
+      {indeterminate ? (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      ) : checked ? (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <polyline points="5 12 10 17 19 7" />
+        </svg>
+      ) : null}
+    </span>
+  );
+}
+
+function AdminBulkActionBar({
+  count,
+  label,
+  onClear,
+  children,
+}: {
+  count: number;
+  label?: string;
+  onClear: () => void;
+  children: React.ReactNode;
+}) {
+  if (count === 0) return null;
+  return (
+    <div className="admin-bulk-bar">
+      <span className="count-pill">{count}</span>
+      <span className="label">{label || 'عنصر محدد'}</span>
+      <span className="spacer" />
+      {children}
+      <button className="admin-bulk-clear" onClick={onClear} title="مسح التحديد" aria-label="clear">
+        ✕
+      </button>
+    </div>
+  );
+}
+
+function AdminConfirmDialog({
+  open,
+  title,
+  message,
+  confirmLabel = 'تأكيد',
+  cancelLabel = 'إلغاء',
+  variant = 'primary',
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  variant?: 'primary' | 'danger' | 'warning';
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  const iconClass = variant === 'danger' ? 'danger' : variant === 'warning' ? 'warning' : 'danger';
+  const iconChar = variant === 'danger' ? '🗑️' : variant === 'warning' ? '⚠️' : '❓';
+  const btnClass = variant === 'danger' ? 'danger' : 'primary';
+  return (
+    <div className="admin-confirm-overlay" onClick={onCancel}>
+      <div className="admin-confirm-card" onClick={(e) => e.stopPropagation()}>
+        <div className={`icon-circle ${iconClass}`}>{iconChar}</div>
+        <h3 style={{ textAlign: 'center' }}>{title}</h3>
+        <p className="message">{message}</p>
+        <div className="actions">
+          <button onClick={onCancel}>{cancelLabel}</button>
+          <button className={btnClass} onClick={onConfirm}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function AdminClient() {
@@ -347,16 +525,35 @@ export default function AdminClient() {
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [commissions, setCommissions] = useState<Commission[]>([]);
   const [commissionPercentage, setCommissionPercentage] = useState('10');
+  const [commissionSaved, setCommissionSaved] = useState('10');
+  const [commissionStatus, setCommissionStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [supportWhatsappNumber, setSupportWhatsappNumber] = useState('');
   const [supportWhatsappMessage, setSupportWhatsappMessage] = useState('');
+  const [supportWhatsappSaved, setSupportWhatsappSaved] = useState({ n: '', m: '' });
+  const [whatsappStatus, setWhatsappStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [shippingZones, setShippingZones] = useState<any[]>([]);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingSaving, setShippingSaving] = useState(false);
   const [shippingNewName, setShippingNewName] = useState('');
   const [shippingNewFee, setShippingNewFee] = useState('');
   const [shippingSearch, setShippingSearch] = useState('');
+  // Shipping zones: per-row edit + bulk selection
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  const [editingZoneDraft, setEditingZoneDraft] = useState<{ fee: string; enabled: boolean; sortOrder: number; name: string } | null>(null);
+  const [selectedZoneIds, setSelectedZoneIds] = useState<Set<string>>(new Set());
+  const [shippingConfirm, setShippingConfirm] = useState<null | {
+    type: 'delete' | 'bulkDelete' | 'bulkEnable' | 'bulkDisable';
+    ids: string[];
+  }>(null);
   const [minimumOrder, setMinimumOrder] = useState('0');
+  const [minimumOrderSaved, setMinimumOrderSaved] = useState('0');
+  const [minimumOrderStatus, setMinimumOrderStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [minimumOrderSaving, setMinimumOrderSaving] = useState(false);
+  // Orders: bulk selection + bulk status update
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [bulkOrderStatus, setBulkOrderStatus] = useState<string>('');
+  const [bulkOrderConfirm, setBulkOrderConfirm] = useState<null | { status: string }>(null);
+  const [bulkOrderUpdating, setBulkOrderUpdating] = useState(false);
   const [walletRechargeRequests, setWalletRechargeRequests] = useState<WalletRechargeRequest[]>([]);
   const [walletRechargeActionLoadingId, setWalletRechargeActionLoadingId] = useState<string | null>(null);
   const [selectedRechargeRequest, setSelectedRechargeRequest] = useState<WalletRechargeRequest | null>(null);
@@ -562,6 +759,7 @@ export default function AdminClient() {
       setProducts(prod);
       setCommissions(com);
       setCommissionPercentage(String(set.percentage));
+      setCommissionSaved(String(set.percentage));
       setCategories(cats ?? []);
     } catch { setMessage('خطأ في تحميل البيانات — تحقق من الاتصال'); }
     finally { setOverviewLoading(false); }
@@ -834,20 +1032,33 @@ export default function AdminClient() {
   }
 
   async function saveCommission() {
-    await api('/admin/settings/commission', { method: 'PUT', body: JSON.stringify({ percentage: Number(commissionPercentage) }) });
-    await refreshAll();
+    setCommissionStatus('saving');
+    try {
+      await api('/admin/settings/commission', { method: 'PUT', body: JSON.stringify({ percentage: Number(commissionPercentage) }) });
+      setCommissionSaved(commissionPercentage);
+      setCommissionStatus('success');
+      window.setTimeout(() => setCommissionStatus('idle'), 2500);
+      await refreshAll();
+    } catch {
+      setCommissionStatus('error');
+      window.setTimeout(() => setCommissionStatus('idle'), 4000);
+    }
   }
 
   async function loadSupportWhatsapp() {
     try {
       const res = await api<{ number?: string; message?: string }>('/admin/settings/support-whatsapp');
-      setSupportWhatsappNumber(String(res?.number ?? ''));
-      setSupportWhatsappMessage(String(res?.message ?? ''));
+      const n = String(res?.number ?? '');
+      const m = String(res?.message ?? '');
+      setSupportWhatsappNumber(n);
+      setSupportWhatsappMessage(m);
+      setSupportWhatsappSaved({ n, m });
     } catch {}
   }
 
   async function saveSupportWhatsapp() {
     setWhatsappSaving(true);
+    setWhatsappStatus('saving');
     try {
       await api('/admin/settings/support-whatsapp', {
         method: 'PUT',
@@ -856,8 +1067,13 @@ export default function AdminClient() {
           message: supportWhatsappMessage,
         }),
       });
+      setSupportWhatsappSaved({ n: supportWhatsappNumber, m: supportWhatsappMessage });
+      setWhatsappStatus('success');
+      window.setTimeout(() => setWhatsappStatus('idle'), 2500);
       setMessage('تم حفظ إعدادات واتساب الدعم بنجاح ✓');
     } catch {
+      setWhatsappStatus('error');
+      window.setTimeout(() => setWhatsappStatus('idle'), 4000);
       setMessage('فشل حفظ الإعدادات — تحقق من الاتصال بالخادم');
     } finally {
       setWhatsappSaving(false);
@@ -920,13 +1136,88 @@ export default function AdminClient() {
   }
 
   async function deleteShippingZone(id: string) {
-    if (!confirm('هل أنت متأكد من حذف هذه المحافظة؟')) return;
     try {
       await api(`/admin/shipping-zones/${id}`, { method: 'DELETE' });
       setShippingZones(shippingZones.filter((z) => z.id !== id));
+      setSelectedZoneIds(prev => { const n = new Set(prev); n.delete(id); return n; });
       setMessage('تم حذف المحافظة بنجاح');
     } catch {
       setMessage('فشل حذف المحافظة');
+    }
+  }
+
+  function startEditZone(zone: any) {
+    setEditingZoneId(zone.id);
+    setEditingZoneDraft({
+      name: String(zone.name ?? ''),
+      fee: String(zone.fee ?? '0'),
+      enabled: Boolean(zone.enabled),
+      sortOrder: Number(zone.sortOrder ?? 0),
+    });
+  }
+
+  function cancelEditZone() {
+    setEditingZoneId(null);
+    setEditingZoneDraft(null);
+  }
+
+  async function saveEditZone(id: string) {
+    if (!editingZoneDraft) return;
+    try {
+      const updated = await api<any>(`/admin/shipping-zones/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: editingZoneDraft.name,
+          fee: Number(editingZoneDraft.fee) || 0,
+          enabled: editingZoneDraft.enabled,
+          sortOrder: editingZoneDraft.sortOrder,
+        }),
+      });
+      setShippingZones(prev => prev.map(z => (z.id === id ? { ...z, ...updated } : z)));
+      setMessage('تم حفظ المحافظة ✓');
+      cancelEditZone();
+    } catch {
+      setMessage('فشل حفظ التعديلات');
+    }
+  }
+
+  async function bulkSetZoneEnabled(ids: string[], enabled: boolean) {
+    try {
+      const payload = ids.map(id => ({ id, enabled }));
+      await api('/admin/shipping-zones-bulk', { method: 'PUT', body: JSON.stringify(payload) });
+      setShippingZones(prev => prev.map(z => (ids.includes(z.id) ? { ...z, enabled } : z)));
+      setSelectedZoneIds(new Set());
+      setMessage(`تم ${enabled ? 'تفعيل' : 'تعطيل'} ${ids.length} محافظة`);
+    } catch {
+      setMessage('فشل تحديث المحافظات');
+    }
+  }
+
+  async function bulkDeleteZones(ids: string[]) {
+    try {
+      await Promise.all(ids.map(id => api(`/admin/shipping-zones/${id}`, { method: 'DELETE' })));
+      setShippingZones(prev => prev.filter(z => !ids.includes(z.id)));
+      setSelectedZoneIds(new Set());
+      setMessage(`تم حذف ${ids.length} محافظة`);
+    } catch {
+      setMessage('فشل حذف بعض المحافظات');
+    }
+  }
+
+  // Bulk update orders status
+  async function bulkUpdateOrderStatus(ids: string[], status: string) {
+    setBulkOrderUpdating(true);
+    try {
+      await Promise.all(ids.map(id => api(`/admin/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })));
+      setFullOrders(prev => prev.map(o => (ids.includes(o.id) ? { ...o, status } : o)));
+      setSelectedOrderIds(new Set());
+      setBulkOrderStatus('');
+      setMessage(`تم تحديث ${ids.length} طلب إلى ${ORDER_STATUS_AR[status as keyof typeof ORDER_STATUS_AR] ?? status}`);
+      fetchOrderStats();
+    } catch {
+      setMessage('فشل تحديث بعض الطلبات');
+    } finally {
+      setBulkOrderUpdating(false);
     }
   }
 
@@ -934,24 +1225,37 @@ export default function AdminClient() {
   async function loadMinimumOrder() {
     try {
       const res = await api<{ amount: number }>('/admin/settings/minimum-order');
-      setMinimumOrder(String(res?.amount ?? 0));
+      const v = String(res?.amount ?? 0);
+      setMinimumOrder(v);
+      setMinimumOrderSaved(v);
     } catch {}
   }
 
   async function saveMinimumOrder() {
     setMinimumOrderSaving(true);
+    setMinimumOrderStatus('saving');
     try {
       await api('/admin/settings/minimum-order', {
         method: 'PUT',
         body: JSON.stringify({ amount: Number(minimumOrder) || 0 }),
       });
+      setMinimumOrderSaved(minimumOrder);
+      setMinimumOrderStatus('success');
+      window.setTimeout(() => setMinimumOrderStatus('idle'), 2500);
       setMessage('تم حفظ الحد الأدنى للطلب بنجاح ✓');
     } catch {
+      setMinimumOrderStatus('error');
+      window.setTimeout(() => setMinimumOrderStatus('idle'), 4000);
       setMessage('فشل حفظ الحد الأدنى للطلب');
     } finally {
       setMinimumOrderSaving(false);
     }
   }
+
+  // Also load commission pristine when overview loads
+  useEffect(() => {
+    setCommissionSaved(commissionPercentage);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadWalletRechargeRequests() {
     try {
@@ -1645,135 +1949,221 @@ export default function AdminClient() {
           {/* ════════════════════════════════════════════════════════
               ORDERS PANEL
              ════════════════════════════════════════════════════════ */}
-          {activePanel === 'orders' && (
-            <section className="panel" style={{ overflow: 'visible', borderRadius: 30 }}>
-
-              <div className="panel-header">
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-                  <h2 style={{ margin: 0, fontSize: 22 }}>إدارة الطلبات</h2>
-                  <span className="total-badge">{orderTotal.toLocaleString('ar-EG')} طلب</span>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button className="action-btn" onClick={() => exportCSV(fullOrders)}>📊 تصدير CSV</button>
-                  <button className="action-btn refresh" onClick={() => { fetchOrders(); fetchOrderStats(); }}>🔄 تحديث</button>
-                </div>
-              </div>
-
-              <div className="order-stats-bar">
-                <div className="order-stat-chip"><span className="chip-num">{orderStats.totalToday}</span><span className="chip-label">طلبات اليوم</span></div>
-                <div className="order-stat-chip pending-chip"><span className="chip-num">{orderStats.pending}</span><span className="chip-label">في الانتظار</span></div>
-                <div className="order-stat-chip delivered-chip"><span className="chip-num">{orderStats.completed}</span><span className="chip-label">مكتملة</span></div>
-                <div className="order-stat-chip cancelled-chip"><span className="chip-num">{orderStats.cancelled}</span><span className="chip-label">ملغاة</span></div>
-                <div className="order-stat-chip sales-chip"><span className="chip-num">{formatEGP(orderStats.totalSalesAmount)}</span><span className="chip-label">إجمالي المبيعات</span></div>
-              </div>
-
-              <div className="filter-bar">
-                <div className="search-wrap">
-                  <span className="search-icon">🔍</span>
-                  <input type="text" className="search-input" placeholder="بحث: اسم العميل، الهاتف، رقم الطلب، اسم المتجر..."
-                    value={orderSearch} onChange={e => { setOrderSearch(e.target.value); setOrderPage(1); }} />
-                </div>
-                <select className="filter-select" value={orderStatus} onChange={e => { setOrderStatus(e.target.value); setOrderPage(1); }}>
-                  <option value="">جميع الحالات</option>
-                  {ORDER_STATUSES.map(s => <option key={s} value={s}>{ORDER_STATUS_AR[s]}</option>)}
-                </select>
-                <select className="filter-select" value={orderDay} onChange={e => { setOrderDay(e.target.value); setOrderDateFrom(''); setOrderDateTo(''); setOrderPage(1); }}>
-                  <option value="">كل الأوقات</option>
-                  <option value="today">اليوم</option>
-                  <option value="yesterday">أمس</option>
-                  <option value="week">هذا الأسبوع</option>
-                  <option value="month">هذا الشهر</option>
-                </select>
-                {!orderDay && (
-                  <>
-                    <input type="date" className="filter-select" value={orderDateFrom}
-                      onChange={e => { setOrderDateFrom(e.target.value); setOrderPage(1); }} title="من تاريخ" />
-                    <input type="date" className="filter-select" value={orderDateTo}
-                      onChange={e => { setOrderDateTo(e.target.value); setOrderPage(1); }} title="إلى تاريخ" />
-                  </>
-                )}
-                <select className="filter-select" value={orderMerchantId} onChange={e => { setOrderMerchantId(e.target.value); setOrderPage(1); }}>
-                  <option value="">كل المتاجر</option>
-                  {merchants.map(m => <option key={m.id} value={m.id}>{m.storeName}</option>)}
-                </select>
-                {hasFilters && <button className="clear-btn" onClick={clearFilters}>✕ مسح الفلاتر</button>}
-              </div>
-
-              <div className="orders-table-wrap">
-                {ordersLoading ? (
-                  <div className="table-state"><div className="spinner" /><p>جاري تحميل الطلبات…</p></div>
-                ) : fullOrders.length === 0 ? (
-                  <div className="table-state">
-                    <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
-                    <p style={{ color: 'var(--muted)' }}>لا توجد طلبات مطابقة للبحث</p>
-                    {hasFilters && <button onClick={clearFilters} className="action-btn">مسح الفلاتر</button>}
+          {activePanel === 'orders' && (() => {
+            const visibleIds = fullOrders.map(o => o.id);
+            const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedOrderIds.has(id));
+            const someSelected = visibleIds.some(id => selectedOrderIds.has(id)) && !allSelected;
+            const toggleAll = () => {
+              setSelectedOrderIds(prev => {
+                const next = new Set(prev);
+                if (allSelected) visibleIds.forEach(id => next.delete(id));
+                else visibleIds.forEach(id => next.add(id));
+                return next;
+              });
+            };
+            const toggleOne = (id: string) => {
+              setSelectedOrderIds(prev => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              });
+            };
+            return (
+              <section className="panel" style={{ overflow: 'visible', borderRadius: 30 }}>
+                <div className="panel-header">
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                    <h2 style={{ margin: 0, fontSize: 22 }}>إدارة الطلبات</h2>
+                    <span className="total-badge">{orderTotal.toLocaleString('ar-EG')} طلب</span>
                   </div>
-                ) : (
-                  <table className="orders-table">
-                    <thead>
-                      <tr>
-                        <th>رقم الطلب</th><th>العميل</th><th>الهاتف</th><th>العنوان</th>
-                        <th>المتجر</th><th>الإجمالي</th><th>الدفع</th><th>#</th><th>الحالة</th><th>التاريخ</th><th>إجراءات</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {fullOrders.map(order => (
-                        <tr key={order.id} className={newOrderIds.has(order.id) ? 'new-order' : ''} onClick={() => setSelectedOrder(order)}>
-                          <td><span className="order-id-badge">#{order.id.slice(-6).toUpperCase()}</span></td>
-                          <td>
-                            <strong>{order.customerName}</strong>
-                            {order.customer?.name && order.customer.name !== order.customerName && <div className="sub-text">{order.customer.name}</div>}
-                          </td>
-                          <td dir="ltr" className="phone-cell">{order.customerPhone}</td>
-                          <td className="address-cell" title={order.deliveryAddress}>{order.deliveryAddress}</td>
-                          <td>
-                            <strong>{order.merchant.storeName}</strong>
-                            <div className="sub-text" dir="ltr">{order.merchant.user.phone}</div>
-                          </td>
-                          <td className="amount-cell">{formatEGP(order.total)}</td>
-                          <td className="sub-text">{PAYMENT_AR[order.paymentMethod] ?? order.paymentMethod}</td>
-                          <td style={{ textAlign: 'center' }}>{order.items.length}</td>
-                          <td>
-                            <span className="status-pill" style={{ background: `${ORDER_STATUS_COLOR[order.status]}22`, color: ORDER_STATUS_COLOR[order.status], border: `1px solid ${ORDER_STATUS_COLOR[order.status]}44` }}>
-                              {ORDER_STATUS_AR[order.status] ?? order.status}
-                            </span>
-                          </td>
-                          <td className="date-cell">{formatDate(order.createdAt)}</td>
-                          <td onClick={e => e.stopPropagation()}>
-                            <div className="action-row">
-                              <button className="icon-btn" title="نسخ الهاتف" onClick={() => copyPhone(order.customerPhone)}>📋</button>
-                              <button className="icon-btn" title="واتساب" onClick={() => openWhatsApp(order.customerPhone)}>💬</button>
-                            </div>
-                          </td>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button className="action-btn" onClick={() => exportCSV(fullOrders)}>📊 تصدير CSV</button>
+                    <button className="action-btn refresh" onClick={() => { fetchOrders(); fetchOrderStats(); }}>🔄 تحديث</button>
+                  </div>
+                </div>
+
+                <div className="order-stats-bar">
+                  <div className="order-stat-chip"><span className="chip-num">{orderStats.totalToday}</span><span className="chip-label">طلبات اليوم</span></div>
+                  <div className="order-stat-chip pending-chip"><span className="chip-num">{orderStats.pending}</span><span className="chip-label">في الانتظار</span></div>
+                  <div className="order-stat-chip delivered-chip"><span className="chip-num">{orderStats.completed}</span><span className="chip-label">مكتملة</span></div>
+                  <div className="order-stat-chip cancelled-chip"><span className="chip-num">{orderStats.cancelled}</span><span className="chip-label">ملغاة</span></div>
+                  <div className="order-stat-chip sales-chip"><span className="chip-num">{formatEGP(orderStats.totalSalesAmount)}</span><span className="chip-label">إجمالي المبيعات</span></div>
+                </div>
+
+                <div className="filter-bar">
+                  <div className="search-wrap">
+                    <span className="search-icon">🔍</span>
+                    <input type="text" className="search-input" placeholder="بحث: اسم العميل، الهاتف، رقم الطلب، اسم المتجر..."
+                      value={orderSearch} onChange={e => { setOrderSearch(e.target.value); setOrderPage(1); }} />
+                  </div>
+                  <select className="filter-select" value={orderStatus} onChange={e => { setOrderStatus(e.target.value); setOrderPage(1); }}>
+                    <option value="">جميع الحالات</option>
+                    {ORDER_STATUSES.map(s => <option key={s} value={s}>{ORDER_STATUS_AR[s]}</option>)}
+                  </select>
+                  <select className="filter-select" value={orderDay} onChange={e => { setOrderDay(e.target.value); setOrderDateFrom(''); setOrderDateTo(''); setOrderPage(1); }}>
+                    <option value="">كل الأوقات</option>
+                    <option value="today">اليوم</option>
+                    <option value="yesterday">أمس</option>
+                    <option value="week">هذا الأسبوع</option>
+                    <option value="month">هذا الشهر</option>
+                  </select>
+                  {!orderDay && (
+                    <>
+                      <input type="date" className="filter-select" value={orderDateFrom}
+                        onChange={e => { setOrderDateFrom(e.target.value); setOrderPage(1); }} title="من تاريخ" />
+                      <input type="date" className="filter-select" value={orderDateTo}
+                        onChange={e => { setOrderDateTo(e.target.value); setOrderPage(1); }} title="إلى تاريخ" />
+                    </>
+                  )}
+                  <select className="filter-select" value={orderMerchantId} onChange={e => { setOrderMerchantId(e.target.value); setOrderPage(1); }}>
+                    <option value="">كل المتاجر</option>
+                    {merchants.map(m => <option key={m.id} value={m.id}>{m.storeName}</option>)}
+                  </select>
+                  {hasFilters && <button className="clear-btn" onClick={clearFilters}>✕ مسح الفلاتر</button>}
+                </div>
+
+                <div className="orders-table-wrap">
+                  {ordersLoading ? (
+                    <div className="table-state"><div className="spinner" /><p>جاري تحميل الطلبات…</p></div>
+                  ) : fullOrders.length === 0 ? (
+                    <div className="table-state">
+                      <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+                      <p style={{ color: 'var(--muted)' }}>لا توجد طلبات مطابقة للبحث</p>
+                      {hasFilters && <button onClick={clearFilters} className="action-btn">مسح الفلاتر</button>}
+                    </div>
+                  ) : (
+                    <table className="orders-table">
+                      <thead>
+                        <tr>
+                          <th className="checkbox-col">
+                            <AdminCheckbox
+                              checked={allSelected}
+                              indeterminate={someSelected}
+                              onChange={toggleAll}
+                              ariaLabel="تحديد الكل"
+                            />
+                          </th>
+                          <th>رقم الطلب</th><th>العميل</th><th>الهاتف</th><th>العنوان</th>
+                          <th>المتجر</th><th>الإجمالي</th><th>الدفع</th><th>#</th><th>الحالة</th><th>التاريخ</th><th>إجراءات</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              {totalPages > 1 && (
-                <div className="pagination">
-                  <span className="pagination-info">{orderTotal.toLocaleString('ar-EG')} طلب — صفحة {orderPage} من {totalPages}</span>
-                  <div className="pagination-btns">
-                    <button disabled={orderPage <= 1} onClick={() => setOrderPage(1)}>«</button>
-                    <button disabled={orderPage <= 1} onClick={() => setOrderPage(p => p - 1)}>‹</button>
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      const pg = Math.max(1, Math.min(orderPage - 2, totalPages - 4)) + i;
-                      return pg <= totalPages ? (
-                        <button key={pg} onClick={() => setOrderPage(pg)}
-                          style={orderPage === pg ? { background: 'var(--brown)', color: 'var(--cream)', border: '1px solid var(--brown)' } : {}}>
-                          {pg}
-                        </button>
-                      ) : null;
-                    })}
-                    <button disabled={orderPage >= totalPages} onClick={() => setOrderPage(p => p + 1)}>›</button>
-                    <button disabled={orderPage >= totalPages} onClick={() => setOrderPage(totalPages)}>»</button>
-                  </div>
+                      </thead>
+                      <tbody>
+                        {fullOrders.map(order => {
+                          const isSelected = selectedOrderIds.has(order.id);
+                          return (
+                            <tr key={order.id}
+                              className={`${newOrderIds.has(order.id) ? 'new-order' : ''}${isSelected ? ' row-selected' : ''}`}
+                              onClick={() => setSelectedOrder(order)}>
+                              <td className="checkbox-col" onClick={e => e.stopPropagation()}>
+                                <AdminCheckbox
+                                  checked={isSelected}
+                                  onChange={() => toggleOne(order.id)}
+                                  ariaLabel={`تحديد طلب ${order.id.slice(-6)}`}
+                                />
+                              </td>
+                              <td><span className="order-id-badge">#{order.id.slice(-6).toUpperCase()}</span></td>
+                              <td>
+                                <strong>{order.customerName}</strong>
+                                {order.customer?.name && order.customer.name !== order.customerName && <div className="sub-text">{order.customer.name}</div>}
+                              </td>
+                              <td dir="ltr" className="phone-cell">{order.customerPhone}</td>
+                              <td className="address-cell" title={order.deliveryAddress}>{order.deliveryAddress}</td>
+                              <td>
+                                <strong>{order.merchant.storeName}</strong>
+                                <div className="sub-text" dir="ltr">{order.merchant.user.phone}</div>
+                              </td>
+                              <td className="amount-cell">{formatEGP(order.total)}</td>
+                              <td className="sub-text">{PAYMENT_AR[order.paymentMethod] ?? order.paymentMethod}</td>
+                              <td style={{ textAlign: 'center' }}>{order.items.length}</td>
+                              <td>
+                                <AdminStatusBadge
+                                  label={ORDER_STATUS_AR[order.status] ?? order.status}
+                                  color={ORDER_STATUS_COLOR[order.status]}
+                                />
+                              </td>
+                              <td className="date-cell">{formatDate(order.createdAt)}</td>
+                              <td onClick={e => e.stopPropagation()}>
+                                <div className="action-row">
+                                  <button className="icon-btn" title="نسخ الهاتف" onClick={() => copyPhone(order.customerPhone)}>📋</button>
+                                  <button className="icon-btn" title="واتساب" onClick={() => openWhatsApp(order.customerPhone)}>💬</button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
-              )}
-            </section>
-          )}
+
+                {totalPages > 1 && (
+                  <div className="pagination">
+                    <span className="pagination-info">{orderTotal.toLocaleString('ar-EG')} طلب — صفحة {orderPage} من {totalPages}</span>
+                    <div className="pagination-btns">
+                      <button disabled={orderPage <= 1} onClick={() => setOrderPage(1)}>«</button>
+                      <button disabled={orderPage <= 1} onClick={() => setOrderPage(p => p - 1)}>‹</button>
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        const pg = Math.max(1, Math.min(orderPage - 2, totalPages - 4)) + i;
+                        return pg <= totalPages ? (
+                          <button key={pg} onClick={() => setOrderPage(pg)}
+                            style={orderPage === pg ? { background: 'var(--brown)', color: 'var(--cream)', border: '1px solid var(--brown)' } : {}}>
+                            {pg}
+                          </button>
+                        ) : null;
+                      })}
+                      <button disabled={orderPage >= totalPages} onClick={() => setOrderPage(p => p + 1)}>›</button>
+                      <button disabled={orderPage >= totalPages} onClick={() => setOrderPage(totalPages)}>»</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bulk action bar — appears when ≥1 row selected */}
+                <AdminBulkActionBar
+                  count={selectedOrderIds.size}
+                  label="طلب محدد"
+                  onClear={() => { setSelectedOrderIds(new Set()); setBulkOrderStatus(''); }}
+                >
+                  <select
+                    value={bulkOrderStatus}
+                    onChange={(e) => setBulkOrderStatus(e.target.value)}
+                    className="admin-bulk-action"
+                    style={{ padding: '6px 10px' }}
+                  >
+                    <option value="">اختر الحالة الجديدة...</option>
+                    {ORDER_STATUSES.map(s => <option key={s} value={s}>{ORDER_STATUS_AR[s]}</option>)}
+                  </select>
+                  <button
+                    className="admin-bulk-action success"
+                    disabled={!bulkOrderStatus || bulkOrderUpdating}
+                    onClick={() => {
+                      if (bulkOrderStatus === 'CANCELLED' || bulkOrderStatus === 'DELIVERED') {
+                        setBulkOrderConfirm({ status: bulkOrderStatus });
+                      } else {
+                        bulkUpdateOrderStatus(Array.from(selectedOrderIds), bulkOrderStatus);
+                      }
+                    }}
+                  >
+                    {bulkOrderUpdating ? '⏳ جاري التحديث...' : '✓ تطبيق'}
+                  </button>
+                </AdminBulkActionBar>
+
+                {/* Confirm dialog for destructive bulk transitions */}
+                <AdminConfirmDialog
+                  open={!!bulkOrderConfirm}
+                  variant={bulkOrderConfirm?.status === 'CANCELLED' ? 'danger' : 'warning'}
+                  title={`تحديث ${selectedOrderIds.size} طلب`}
+                  message={`سيتم تغيير حالة ${selectedOrderIds.size} طلب إلى "${bulkOrderConfirm ? (ORDER_STATUS_AR[bulkOrderConfirm.status as keyof typeof ORDER_STATUS_AR] ?? bulkOrderConfirm.status) : ''}". هل أنت متأكد؟`}
+                  confirmLabel="نعم، تطبيق"
+                  onConfirm={() => {
+                    if (!bulkOrderConfirm) return;
+                    bulkUpdateOrderStatus(Array.from(selectedOrderIds), bulkOrderConfirm.status);
+                    setBulkOrderConfirm(null);
+                  }}
+                  onCancel={() => setBulkOrderConfirm(null)}
+                />
+              </section>
+            );
+          })()}
 
           {/* ════════════════════════════════════════════════════════
               MERCHANTS PANEL
@@ -2823,12 +3213,10 @@ export default function AdminClient() {
              ════════════════════════════════════════════════════════ */}
           {activePanel === 'financial' && (
             <div>
-              <div className="pg-header">
-                <div>
-                  <h2 className="pg-title">لوحة المالية والعمولات</h2>
-                  <p className="pg-subtitle">تتبع العمولات والإيرادات وإعدادات الرسوم</p>
-                </div>
-              </div>
+              <AdminPageHeader
+                title="الإعدادات المالية"
+                subtitle="نسبة العمولة، الحد الأدنى للطلب، إعدادات واتساب الدعم"
+              />
 
               <div className="analytics-grid">
                 <div className="an-card gold">
@@ -2849,79 +3237,97 @@ export default function AdminClient() {
                 <div className="an-card orange">
                   <div className="an-card-icon">%</div>
                   <div className="an-card-label">نسبة العمولة الحالية</div>
-                  <div className="an-card-value">{commissionPercentage}%</div>
+                  <div className="an-card-value">{commissionSaved}%</div>
                 </div>
               </div>
 
               <div className="two-col">
-                <div className="chart-panel">
-                  <h3 className="chart-panel-title">⚙️ إعداد نسبة العمولة</h3>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginTop: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>النسبة المئوية %</label>
-                      <input type="number" value={commissionPercentage} onChange={e => setCommissionPercentage(e.target.value)} min="0" max="100"
-                        style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 16, background: 'var(--paper)', color: 'var(--brown)' }} />
-                    </div>
-                    <button className="action-btn" onClick={saveCommission} style={{ flexShrink: 0, background: 'var(--brown)', color: 'var(--cream)', border: 'none' }}>
-                      💾 حفظ النسبة
+                {/* Commission card */}
+                <div className={`admin-settings-card ${commissionPercentage !== commissionSaved ? 'dirty' : ''}`}>
+                  <div className="admin-settings-card-header">
+                    <span className="icon">⚙️</span>
+                    <h3>نسبة العمولة</h3>
+                    {commissionPercentage !== commissionSaved && (
+                      <span style={{ fontSize: 10, color: 'var(--gold)', fontWeight: 800 }}>غير محفوظ</span>
+                    )}
+                  </div>
+                  <div className="admin-settings-card-body">
+                    <p className="helper">النسبة المئوية المستقطعة من كل طلب مسلّم. تُطبَّق على جميع التجار افتراضيًا.</p>
+                    <label>النسبة المئوية %</label>
+                    <input type="number" value={commissionPercentage} onChange={e => setCommissionPercentage(e.target.value)} min="0" max="100" />
+                  </div>
+                  <div className="admin-settings-card-footer">
+                    {commissionStatus === 'saving' && <span className="save-indicator saving">⏳ جاري الحفظ…</span>}
+                    {commissionStatus === 'success' && <span className="save-indicator success">✓ تم الحفظ</span>}
+                    {commissionStatus === 'error' && <span className="save-indicator error">✕ فشل الحفظ</span>}
+                    <button className="admin-row-btn" disabled={commissionPercentage === commissionSaved} onClick={() => setCommissionPercentage(commissionSaved)}>
+                      إلغاء
+                    </button>
+                    <button className="admin-row-btn primary" disabled={commissionPercentage === commissionSaved || commissionStatus === 'saving'} onClick={saveCommission}>
+                      💾 حفظ
                     </button>
                   </div>
                 </div>
 
-                <div className="chart-panel">
-                  <h3 className="chart-panel-title">📦 الحد الأدنى للطلب</h3>
-                  <p style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', margin: '8px 0 12px' }}>لن يتمكن العميل من إتمام الطلب إذا كان المجموع أقل من هذا المبلغ (0 = بدون حد أدنى)</p>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>المبلغ (ج.م)</label>
-                      <input type="number" value={minimumOrder} onChange={e => setMinimumOrder(e.target.value)} min="0"
-                        style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 16, background: 'var(--paper)', color: 'var(--brown)' }} />
-                    </div>
-                    <button className="action-btn" onClick={saveMinimumOrder} disabled={minimumOrderSaving}
-                      style={{ flexShrink: 0, background: 'var(--brown)', color: 'var(--cream)', border: 'none', opacity: minimumOrderSaving ? 0.65 : 1, cursor: minimumOrderSaving ? 'wait' : 'pointer' }}>
-                      {minimumOrderSaving ? '⏳ جاري الحفظ…' : '💾 حفظ الحد الأدنى'}
+                {/* Minimum Order card */}
+                <div className={`admin-settings-card ${minimumOrder !== minimumOrderSaved ? 'dirty' : ''}`}>
+                  <div className="admin-settings-card-header">
+                    <span className="icon">📦</span>
+                    <h3>الحد الأدنى للطلب</h3>
+                    {minimumOrder !== minimumOrderSaved && (
+                      <span style={{ fontSize: 10, color: 'var(--gold)', fontWeight: 800 }}>غير محفوظ</span>
+                    )}
+                  </div>
+                  <div className="admin-settings-card-body">
+                    <p className="helper">لن يتمكن العميل من إتمام الطلب إذا كان المجموع أقل من هذا المبلغ. (0 = بدون حد أدنى)</p>
+                    <label>المبلغ (ج.م)</label>
+                    <input type="number" value={minimumOrder} onChange={e => setMinimumOrder(e.target.value)} min="0" />
+                  </div>
+                  <div className="admin-settings-card-footer">
+                    {minimumOrderStatus === 'saving' && <span className="save-indicator saving">⏳ جاري الحفظ…</span>}
+                    {minimumOrderStatus === 'success' && <span className="save-indicator success">✓ تم الحفظ</span>}
+                    {minimumOrderStatus === 'error' && <span className="save-indicator error">✕ فشل الحفظ</span>}
+                    <button className="admin-row-btn" disabled={minimumOrder === minimumOrderSaved} onClick={() => setMinimumOrder(minimumOrderSaved)}>
+                      إلغاء
+                    </button>
+                    <button className="admin-row-btn primary" disabled={minimumOrder === minimumOrderSaved || minimumOrderSaving} onClick={saveMinimumOrder}>
+                      💾 حفظ
                     </button>
                   </div>
                 </div>
 
-                <div className="chart-panel">
-                  <h3 className="chart-panel-title">💬 إعدادات واتساب الدعم</h3>
-                  <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-                    <div>
-                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
-                        WhatsApp Support Number
-                      </label>
-                      <input
-                        type="text"
-                        value={supportWhatsappNumber}
-                        onChange={e => setSupportWhatsappNumber(e.target.value)}
-                        placeholder="201145928534"
-                        style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 14, background: 'var(--paper)', color: 'var(--brown)' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
-                        WhatsApp Default Message
-                      </label>
-                      <textarea
-                        value={supportWhatsappMessage}
-                        onChange={e => setSupportWhatsappMessage(e.target.value)}
-                        rows={3}
-                        placeholder="السلام عليكم، محتاج مساعدة في تطبيق سوق العسل"
-                        style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 14, background: 'var(--paper)', color: 'var(--brown)', resize: 'vertical' }}
-                      />
-                    </div>
-                    <div>
-                      <button
-                          className="action-btn"
-                          onClick={saveSupportWhatsapp}
-                          disabled={whatsappSaving}
-                          style={{ background: 'var(--brown)', color: 'var(--cream)', border: 'none', opacity: whatsappSaving ? 0.65 : 1, cursor: whatsappSaving ? 'wait' : 'pointer' }}>
-                          {whatsappSaving ? '⏳ جاري الحفظ…' : '💾 حفظ إعدادات واتساب الدعم'}
+                {/* WhatsApp Support card */}
+                {(() => {
+                  const dirty = supportWhatsappNumber !== supportWhatsappSaved.n || supportWhatsappMessage !== supportWhatsappSaved.m;
+                  return (
+                    <div className={`admin-settings-card ${dirty ? 'dirty' : ''}`}>
+                      <div className="admin-settings-card-header">
+                        <span className="icon">💬</span>
+                        <h3>دعم واتساب</h3>
+                        {dirty && <span style={{ fontSize: 10, color: 'var(--gold)', fontWeight: 800 }}>غير محفوظ</span>}
+                      </div>
+                      <div className="admin-settings-card-body">
+                        <p className="helper">رقم الدعم والرسالة الافتراضية التي يفتحها زر الواتساب في تطبيق العميل.</p>
+                        <label>WhatsApp Support Number</label>
+                        <input type="text" value={supportWhatsappNumber} onChange={e => setSupportWhatsappNumber(e.target.value)} placeholder="201145928534" />
+                        <div style={{ height: 10 }} />
+                        <label>WhatsApp Default Message</label>
+                        <textarea value={supportWhatsappMessage} onChange={e => setSupportWhatsappMessage(e.target.value)} rows={3} placeholder="السلام عليكم، محتاج مساعدة في تطبيق سوق العسل" />
+                      </div>
+                      <div className="admin-settings-card-footer">
+                        {whatsappStatus === 'saving' && <span className="save-indicator saving">⏳ جاري الحفظ…</span>}
+                        {whatsappStatus === 'success' && <span className="save-indicator success">✓ تم الحفظ</span>}
+                        {whatsappStatus === 'error' && <span className="save-indicator error">✕ فشل الحفظ</span>}
+                        <button className="admin-row-btn" disabled={!dirty} onClick={() => { setSupportWhatsappNumber(supportWhatsappSaved.n); setSupportWhatsappMessage(supportWhatsappSaved.m); }}>
+                          إلغاء
                         </button>
+                        <button className="admin-row-btn primary" disabled={!dirty || whatsappSaving} onClick={saveSupportWhatsapp}>
+                          💾 حفظ
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  );
+                })()}
 
                 <div className="chart-panel">
                   <h3 className="chart-panel-title">📊 ملخص الإيرادات</h3>
@@ -2948,153 +3354,235 @@ export default function AdminClient() {
             </div>
           )}
 
-          {activePanel === 'shipping' && (
-            <div>
-              <div className="pg-header">
-                <div>
-                  <h2 className="pg-title">رسوم الشحن حسب المحافظة</h2>
-                  <p className="pg-subtitle">إدارة رسوم الشحن لكل محافظة — يتم تطبيقها تلقائيًا عند الطلب</p>
-                </div>
-                <button className="btn btn-primary" onClick={saveShippingZones} disabled={shippingSaving}>
-                  {shippingSaving ? 'جاري الحفظ...' : 'حفظ الكل'}
-                </button>
-              </div>
+          {activePanel === 'shipping' && (() => {
+            const filteredZones = shippingZones.filter(z =>
+              shippingSearch.trim() === '' ||
+              (z.name as string).toLowerCase().includes(shippingSearch.trim().toLowerCase())
+            );
+            const filteredIds = filteredZones.map(z => z.id as string);
+            const allSelected = filteredIds.length > 0 && filteredIds.every(id => selectedZoneIds.has(id));
+            const someSelected = filteredIds.some(id => selectedZoneIds.has(id)) && !allSelected;
+            const toggleAll = () => {
+              setSelectedZoneIds(prev => {
+                const next = new Set(prev);
+                if (allSelected) filteredIds.forEach(id => next.delete(id));
+                else filteredIds.forEach(id => next.add(id));
+                return next;
+              });
+            };
+            const toggleOne = (id: string) => {
+              setSelectedZoneIds(prev => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              });
+            };
+            return (
+              <div>
+                <AdminPageHeader
+                  title="رسوم الشحن"
+                  subtitle="إدارة رسوم الشحن لكل محافظة — يتم تطبيقها تلقائيًا عند الطلب"
+                  badge={`${shippingZones.length} محافظة`}
+                />
 
-              {/* Add new governorate */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-                <input
-                  type="text"
-                  placeholder="اسم المحافظة الجديدة"
-                  value={shippingNewName}
-                  onChange={(e) => setShippingNewName(e.target.value)}
-                  style={{ flex: 1, minWidth: 160, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)' }}
-                />
-                <input
-                  type="number"
-                  placeholder="الرسوم (ج.م)"
-                  value={shippingNewFee}
-                  onChange={(e) => setShippingNewFee(e.target.value)}
-                  style={{ width: 120, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)' }}
-                  min="0"
-                />
-                <button className="btn btn-primary" onClick={addShippingZone} disabled={!shippingNewName.trim()}>
-                  + إضافة
-                </button>
-              </div>
-
-              {/* Search */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
-                <span style={{ fontSize: 16 }}>🔍</span>
-                <input
-                  type="text"
-                  placeholder="ابحث عن محافظة..."
-                  value={shippingSearch}
-                  onChange={(e) => setShippingSearch(e.target.value)}
-                  style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontFamily: 'Cairo' }}
-                />
-                {shippingSearch && (
-                  <button
-                    className="btn btn-sm"
-                    style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', cursor: 'pointer' }}
-                    onClick={() => setShippingSearch('')}
-                  >
-                    مسح
+                {/* Add new governorate */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    placeholder="اسم المحافظة الجديدة"
+                    value={shippingNewName}
+                    onChange={(e) => setShippingNewName(e.target.value)}
+                    style={{ flex: 1, minWidth: 160, padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71, 39, 21, 0.15)', fontFamily: 'Cairo', background: 'var(--paper)', color: 'var(--brown)' }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="الرسوم (ج.م)"
+                    value={shippingNewFee}
+                    onChange={(e) => setShippingNewFee(e.target.value)}
+                    style={{ width: 140, padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(71, 39, 21, 0.15)', fontFamily: 'Cairo', background: 'var(--paper)', color: 'var(--brown)' }}
+                    min="0"
+                  />
+                  <button className="admin-row-btn primary" onClick={addShippingZone} disabled={!shippingNewName.trim()} style={{ padding: '9px 14px', fontSize: 13 }}>
+                    + إضافة محافظة
                   </button>
-                )}
-              </div>
-
-              {shippingLoading ? (
-                <div style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>جاري التحميل...</div>
-              ) : (
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>المحافظة</th>
-                        <th>رسوم الشحن (ج.م)</th>
-                        <th>الحالة</th>
-                        <th>الترتيب</th>
-                        <th>إجراءات</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {shippingZones
-                        .map((zone, idx) => ({ zone, idx }))
-                        .filter(({ zone }) =>
-                          shippingSearch.trim() === ''
-                            ? true
-                            : (zone.name as string).toLowerCase().includes(shippingSearch.trim().toLowerCase())
-                        )
-                        .map(({ zone, idx }) => (
-                        <tr key={zone.id}>
-                          <td style={{ fontWeight: 600 }}>{zone.name}</td>
-                          <td>
-                            <input
-                              type="number"
-                              min="0"
-                              value={zone.fee}
-                              onChange={(e) => {
-                                const updated = [...shippingZones];
-                                updated[idx] = { ...updated[idx], fee: e.target.value };
-                                setShippingZones(updated);
-                              }}
-                              style={{ width: 100, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', textAlign: 'center' }}
-                            />
-                          </td>
-                          <td>
-                            <button
-                              className={`badge ${zone.enabled ? 'badge-success' : 'badge-danger'}`}
-                              style={{ cursor: 'pointer', border: 'none' }}
-                              onClick={() => {
-                                const updated = [...shippingZones];
-                                updated[idx] = { ...updated[idx], enabled: !updated[idx].enabled };
-                                setShippingZones(updated);
-                              }}
-                            >
-                              {zone.enabled ? 'مفعّل' : 'معطّل'}
-                            </button>
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              min="0"
-                              value={zone.sortOrder}
-                              onChange={(e) => {
-                                const updated = [...shippingZones];
-                                updated[idx] = { ...updated[idx], sortOrder: Number(e.target.value) };
-                                setShippingZones(updated);
-                              }}
-                              style={{ width: 60, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', textAlign: 'center' }}
-                            />
-                          </td>
-                          <td>
-                            <button
-                              className="btn btn-sm"
-                              style={{ color: '#dc3545', background: 'none', border: 'none', cursor: 'pointer' }}
-                              onClick={() => deleteShippingZone(zone.id)}
-                            >
-                              🗑️ حذف
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {shippingZones.length === 0 && (
-                        <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>لا توجد مناطق شحن — أضف محافظة جديدة</td></tr>
-                      )}
-                      {shippingZones.length > 0 && shippingSearch.trim() !== '' &&
-                        shippingZones.filter((z) =>
-                          (z.name as string).toLowerCase().includes(shippingSearch.trim().toLowerCase())
-                        ).length === 0 && (
-                        <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>
-                          لا توجد محافظات مطابقة لـ &ldquo;{shippingSearch}&rdquo;
-                        </td></tr>
-                      )}
-                    </tbody>
-                  </table>
                 </div>
-              )}
-            </div>
-          )}
+
+                {/* Search */}
+                <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <AdminSearchInput
+                    value={shippingSearch}
+                    onChange={setShippingSearch}
+                    placeholder="ابحث عن محافظة..."
+                  />
+                </div>
+
+                {shippingLoading ? (
+                  <div style={{ textAlign: 'center', padding: 32, color: 'var(--muted)' }}>جاري التحميل...</div>
+                ) : (
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th className="checkbox-col">
+                            <AdminCheckbox
+                              checked={allSelected}
+                              indeterminate={someSelected}
+                              onChange={toggleAll}
+                              ariaLabel="تحديد الكل"
+                            />
+                          </th>
+                          <th>المحافظة</th>
+                          <th>رسوم الشحن (ج.م)</th>
+                          <th>الحالة</th>
+                          <th>الترتيب</th>
+                          <th>إجراءات</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredZones.map((zone) => {
+                          const isEditing = editingZoneId === zone.id;
+                          const isSelected = selectedZoneIds.has(zone.id);
+                          const draft = isEditing ? editingZoneDraft! : null;
+                          return (
+                            <tr key={zone.id} className={isSelected ? 'row-selected' : ''}>
+                              <td className="checkbox-col">
+                                <AdminCheckbox
+                                  checked={isSelected}
+                                  onChange={() => toggleOne(zone.id)}
+                                  ariaLabel={`تحديد ${zone.name}`}
+                                />
+                              </td>
+                              <td style={{ fontWeight: 700 }}>
+                                {isEditing ? (
+                                  <input
+                                    className="admin-row-input"
+                                    style={{ maxWidth: 160 }}
+                                    value={draft!.name}
+                                    onChange={(e) => setEditingZoneDraft({ ...draft!, name: e.target.value })}
+                                  />
+                                ) : zone.name}
+                              </td>
+                              <td>
+                                {isEditing ? (
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="admin-row-input"
+                                    value={draft!.fee}
+                                    onChange={(e) => setEditingZoneDraft({ ...draft!, fee: e.target.value })}
+                                  />
+                                ) : (
+                                  <span style={{ fontWeight: 700 }}>{Number(zone.fee).toLocaleString('ar-EG')}</span>
+                                )}
+                              </td>
+                              <td>
+                                {isEditing ? (
+                                  <button
+                                    className={`admin-row-btn ${draft!.enabled ? 'success' : 'danger'}`}
+                                    onClick={() => setEditingZoneDraft({ ...draft!, enabled: !draft!.enabled })}
+                                  >
+                                    {draft!.enabled ? '✓ مفعّل' : '✕ معطّل'}
+                                  </button>
+                                ) : (
+                                  <AdminStatusBadge
+                                    label={zone.enabled ? '✓ مفعّل' : '✕ معطّل'}
+                                    color={zone.enabled ? '#16a34a' : '#dc2626'}
+                                  />
+                                )}
+                              </td>
+                              <td>
+                                {isEditing ? (
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="admin-row-input"
+                                    style={{ maxWidth: 70 }}
+                                    value={draft!.sortOrder}
+                                    onChange={(e) => setEditingZoneDraft({ ...draft!, sortOrder: Number(e.target.value) || 0 })}
+                                  />
+                                ) : (
+                                  <span style={{ color: 'var(--muted)' }}>{zone.sortOrder}</span>
+                                )}
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                  {isEditing ? (
+                                    <>
+                                      <button className="admin-row-btn primary" onClick={() => saveEditZone(zone.id)}>
+                                        💾 حفظ
+                                      </button>
+                                      <button className="admin-row-btn" onClick={cancelEditZone}>
+                                        ✕ إلغاء
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button className="admin-row-btn" onClick={() => startEditZone(zone)}>
+                                        ✏️ تعديل
+                                      </button>
+                                      <button className="admin-row-btn danger" onClick={() => setShippingConfirm({ type: 'delete', ids: [zone.id] })}>
+                                        🗑️ حذف
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {shippingZones.length === 0 && (
+                          <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>
+                            لا توجد مناطق شحن — أضف محافظة جديدة
+                          </td></tr>
+                        )}
+                        {shippingZones.length > 0 && filteredZones.length === 0 && (
+                          <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>
+                            لا توجد محافظات مطابقة لـ &ldquo;{shippingSearch}&rdquo;
+                          </td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Bulk action bar */}
+                <AdminBulkActionBar
+                  count={selectedZoneIds.size}
+                  label="محافظة محددة"
+                  onClear={() => setSelectedZoneIds(new Set())}
+                >
+                  <button className="admin-bulk-action success" onClick={() => bulkSetZoneEnabled(Array.from(selectedZoneIds), true)}>
+                    ✓ تفعيل
+                  </button>
+                  <button className="admin-bulk-action warning" onClick={() => bulkSetZoneEnabled(Array.from(selectedZoneIds), false)}>
+                    ✕ تعطيل
+                  </button>
+                  <button className="admin-bulk-action danger" onClick={() => setShippingConfirm({ type: 'bulkDelete', ids: Array.from(selectedZoneIds) })}>
+                    🗑️ حذف
+                  </button>
+                </AdminBulkActionBar>
+
+                {/* Confirm dialog */}
+                <AdminConfirmDialog
+                  open={!!shippingConfirm}
+                  variant="danger"
+                  title={shippingConfirm?.type === 'delete' ? 'حذف المحافظة' : `حذف ${shippingConfirm?.ids.length ?? 0} محافظة`}
+                  message={shippingConfirm?.type === 'delete'
+                    ? 'هل أنت متأكد من حذف هذه المحافظة؟ لا يمكن التراجع.'
+                    : `سيتم حذف ${shippingConfirm?.ids.length ?? 0} محافظة بشكل نهائي. لا يمكن التراجع.`}
+                  confirmLabel="نعم، حذف"
+                  onConfirm={() => {
+                    if (!shippingConfirm) return;
+                    if (shippingConfirm.type === 'delete') deleteShippingZone(shippingConfirm.ids[0]);
+                    else bulkDeleteZones(shippingConfirm.ids);
+                    setShippingConfirm(null);
+                  }}
+                  onCancel={() => setShippingConfirm(null)}
+                />
+              </div>
+            );
+          })()}
 
           {activePanel === 'whatsapp_support' && (
             <div>
