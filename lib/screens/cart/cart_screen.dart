@@ -700,18 +700,25 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.92,
-        minChildSize: 0.5,
-        maxChildSize: 0.97,
-        builder: (ctx, scrollCtrl) => Container(
-          decoration: const BoxDecoration(
-            color: kSurface,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
+    return PopScope(
+      canPop: !_submitting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _submitting) {
+          _snack('جاري إتمام الطلب…', isError: false);
+        }
+      },
+      child: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: DraggableScrollableSheet(
+          initialChildSize: 0.92,
+          minChildSize: 0.5,
+          maxChildSize: 0.97,
+          builder: (ctx, scrollCtrl) => Container(
+            decoration: const BoxDecoration(
+              color: kSurface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
             children: [
               // Handle bar
               Container(
@@ -861,6 +868,7 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -943,16 +951,32 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
         widget.state.showScreen(AppScreen.orders, bottomIndex: 1);
         return;
       }
-      final sessionExpired = widget.state.consumeCheckoutSessionExpired();
-      if (sessionExpired) {
-        _snack('انتهت صلاحية الجلسة، يرجى تسجيل الدخول مرة أخرى', isError: true);
-        await widget.state.forceLogoutToLogin();
-        if (mounted && Navigator.of(context).canPop()) {
-          Navigator.of(context).pop();
-        }
+
+      // ── Failure: handle by category, surface backend message ────────────
+      final err = widget.state.lastCheckoutError;
+      widget.state.consumeLastCheckoutError();
+      if (err == null) {
+        // Defensive: should never happen — checkout() always sets lastCheckoutError on false.
+        _snack('تعذر إتمام الطلب، يرجى المحاولة لاحقاً', isError: true);
         return;
       }
-      _snack('حدث خطأ، يرجى المحاولة مرة أخرى', isError: true);
+      switch (err.kind) {
+        case CheckoutErrorKind.authInvalid:
+          _snack(err.message, isError: true);
+          await widget.state.forceLogoutToLogin();
+          if (mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+          return;
+        case CheckoutErrorKind.cartInvalid:
+          await _showCartInvalidDialog(err.message);
+          return;
+        case CheckoutErrorKind.validation:
+        case CheckoutErrorKind.server:
+        case CheckoutErrorKind.network:
+          _snack(err.message, isError: true);
+          return;
+      }
     } catch (e, st) {
       debugPrint('[CHECKOUT] checkout exception: $e');
       debugPrintStack(stackTrace: st);
@@ -977,6 +1001,66 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
       margin: const EdgeInsets.all(16),
       duration: const Duration(seconds: 3),
     ));
+  }
+
+  /// Modal dialog shown when the backend reports a cart-level problem
+  /// (out of stock, merchant disabled, product inactive, minimum order, etc).
+  /// User can either acknowledge and keep cart intact, or clear cart.
+  Future<void> _showCartInvalidDialog(String message) async {
+    if (!mounted) return;
+    final shouldClear = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text(
+          'تعذر إتمام الطلب',
+          textDirection: TextDirection.rtl,
+          style: TextStyle(
+            fontFamily: 'Cairo',
+            fontWeight: FontWeight.w800,
+            fontSize: 16,
+          ),
+        ),
+        content: Text(
+          message,
+          textDirection: TextDirection.rtl,
+          style: const TextStyle(
+            fontFamily: 'Cairo',
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'إغلاق',
+              style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w700),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'تفريغ السلة',
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                fontWeight: FontWeight.w700,
+                color: kError,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (shouldClear == true) {
+      widget.state.clearCart();
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop(); // close sheet
+      }
+      _snack('تم تفريغ السلة', isError: false);
+    }
   }
 }
 
