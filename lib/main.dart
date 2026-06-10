@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show HttpException, SocketException;
+import 'dart:io' show FileSystemException, HttpException, PathNotFoundException, SocketException;
 import 'dart:ui';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -74,11 +74,15 @@ void main() {
       if (exception is NetworkImageLoadException) return true;
       if (exception is HttpException)             return true;
       if (exception is SocketException)           return true;
+      if (exception is PathNotFoundException)     return true;
+      if (exception is FileSystemException)       return true;
       final msg = exception.toString().toLowerCase();
       return msg.contains('image resource service') ||
              msg.contains('failed to load network image') ||
              msg.contains('invalid image data') ||
-             msg.contains('http request failed');
+             msg.contains('http request failed') ||
+             msg.contains('pathnotfoundexception') ||
+             msg.contains('no such file or directory');
     }
 
     FlutterError.onError = (details) {
@@ -109,9 +113,13 @@ void main() {
       return true;
     };
 
-    await FirebaseMessaging.instance.requestPermission(
-      alert: true, badge: true, sound: true,
-    );
+    try {
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true, badge: true, sound: true,
+      );
+    } catch (e) {
+      debugPrint('[FCM] requestPermission failed: $e');
+    }
     FirebaseMessaging.onBackgroundMessage(_bgHandler);
 
     await _localNotifications.initialize(
@@ -188,13 +196,24 @@ class _AppRootState extends State<_AppRoot> {
   }
 
   Future<void> _registerFcm() async {
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token != null && mounted) {
-      context.read<AppState>().updateFcmToken(token);
+    try {
+      final token = await FirebaseMessaging.instance
+          .getToken()
+          .timeout(const Duration(seconds: 10));
+      if (token != null && mounted) {
+        context.read<AppState>().updateFcmToken(token);
+      }
+      FirebaseMessaging.instance.onTokenRefresh.listen((t) {
+        if (mounted) context.read<AppState>().updateFcmToken(t);
+      });
+    } catch (e, stack) {
+      debugPrint('[FCM] token registration failed: $e');
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'FCM getToken failed (MISSING_INSTANCEID_SERVICE or timeout)',
+        fatal: false,
+      );
     }
-    FirebaseMessaging.instance.onTokenRefresh.listen((t) {
-      if (mounted) context.read<AppState>().updateFcmToken(t);
-    });
   }
 
   void _setupNotificationTapHandlers() {

@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -75,7 +76,26 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
   // ── build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final st    = context.watch<AppState>();
+    final AppState st;
+    try {
+      st = context.watch<AppState>();
+    } catch (e, stack) {
+      FirebaseCrashlytics.instance.recordError(
+        e, stack,
+        reason: 'StoreDetailScreen: Provider not found',
+        fatal: false,
+      );
+      return Scaffold(
+        backgroundColor: kBackground,
+        body: EmptyState(
+          icon: '🏪',
+          title: 'هذا المتجر غير متاح حالياً',
+          subtitle: 'حاول الرجوع وإعادة فتح المتجر مرة أخرى',
+          onAction: () => Navigator.of(context).maybePop(),
+        ),
+      );
+    }
+
     final store = st.selectedStore;
     debugPrint(
       '[StoreDetailScreen] loading=${st.loadingStore} '
@@ -100,8 +120,10 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
                       heroTag: 'store_cart_fab',
                       backgroundColor: kHoney,
                       foregroundColor: Colors.white,
-                      onPressed: () =>
-                          context.read<AppState>().showScreen(AppScreen.cart, bottomIndex: 2),
+                      onPressed: () {
+                        if (!mounted) return;
+                        context.read<AppState>().showScreen(AppScreen.cart, bottomIndex: 2);
+                      },
                       child: const Icon(Icons.shopping_cart_checkout_rounded),
                     ),
                     Positioned(
@@ -140,9 +162,12 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
           : !hasStoreData
               ? EmptyState(
                   icon: '🏪',
-                  title: 'تعذر تحميل بيانات المتجر',
+                  title: 'هذا المتجر غير متاح حالياً',
                   subtitle: 'حاول الرجوع وإعادة فتح المتجر مرة أخرى',
-                  onAction: () => context.read<AppState>().closeStore(),
+                  onAction: () {
+                    if (!mounted) return;
+                    context.read<AppState>().closeStore();
+                  },
                 )
               : _buildBody(context, st, store),
     );
