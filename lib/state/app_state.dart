@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../services/api_service.dart';
+import '../services/analytics_service.dart';
 import '../services/home_cache_service.dart';
 import '../services/storage_service.dart';
 
@@ -110,6 +111,7 @@ class AppState extends ChangeNotifier {
         notifyListeners();
         // Flush any FCM token that arrived before login completed
         unawaited(_flushFcmToken());
+        unawaited(AnalyticsService.instance.logCompleteRegistration());
         return true;
       }
       return false;
@@ -571,6 +573,11 @@ class AppState extends ChangeNotifier {
     }
     _saveCart();
     notifyListeners();
+    unawaited(AnalyticsService.instance.logAddToCart(
+      productId: (product['id'] ?? '') as String,
+      productName: (product['name'] ?? '') as String,
+      price: ((product['price'] is num ? product['price'] : 0) as num).toDouble(),
+    ));
     return true;
   }
 
@@ -722,6 +729,10 @@ class AppState extends ChangeNotifier {
     }
     _checkingOut = true;
     notifyListeners();
+    unawaited(AnalyticsService.instance.logInitiateCheckout(
+      itemCount: _cart.length,
+      totalPrice: cartTotal,
+    ));
     final api = ApiService(token: _token);
     // Extract merchantId from first cart item (all items must belong to same merchant)
     final merchantId = _cart.first['merchantId'] as String?;
@@ -765,6 +776,11 @@ class AppState extends ChangeNotifier {
 
       // ── Success ────────────────────────────────────────────────────────────
       if (res is Map && res['id'] != null) {
+        unawaited(AnalyticsService.instance.logPurchase(
+          orderId: res['id'] as String,
+          totalPrice: cartTotal,
+          itemCount: _cart.length,
+        ));
         _cart = [];
         await _saveCart();
         await loadOrders();
