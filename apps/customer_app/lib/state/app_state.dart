@@ -1,10 +1,31 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../services/api_service.dart';
+import '../services/analytics_service.dart';
 import '../services/home_cache_service.dart';
 import '../services/storage_service.dart';
 
 enum AppScreen { home, orders, cart, login, storeDetail, productDetail }
+
+/// Categorisation of why a checkout attempt failed.
+/// Drives different UI handling in [_CheckoutSheetState._submit].
+enum CheckoutErrorKind { authInvalid, cartInvalid, validation, server, network }
+
+/// Structured error produced by [AppState.checkout] when an attempt fails.
+/// The [message] is already user-facing Arabic — UIs can display it directly.
+class CheckoutError {
+  final CheckoutErrorKind kind;
+  final int? statusCode;
+  final String message;
+  const CheckoutError({
+    required this.kind,
+    this.statusCode,
+    required this.message,
+  });
+}
 
 class AppState extends ChangeNotifier {
   // ── Navigation ───────────────────────────────────────────────────────────────
@@ -34,10 +55,16 @@ class AppState extends ChangeNotifier {
   String?               _token;
   Map<String, dynamic>? _user;
   bool                  _checkoutSessionExpired = false;
+  CheckoutError?        _lastCheckoutError;
+  PackageInfo?          _cachedPackageInfo;
 
   String?               get token => _token;
   Map<String, dynamic>? get user  => _user;
   bool                  get isLoggedIn => _token != null;
+  CheckoutError?        get lastCheckoutError => _lastCheckoutError;
+  void consumeLastCheckoutError() {
+    _lastCheckoutError = null;
+  }
   double get walletBalance {
     final raw = _user?['walletBalance'];
     if (raw == null) return 0.0;
@@ -56,11 +83,25 @@ class AppState extends ChangeNotifier {
     if (isLoggedIn) await _flushFcmToken();
   }
 
+  // ── OTP error surfacing ────────────────────────────────────────────────────
+  String? _lastOtpError;
+  String? get lastOtpError => _lastOtpError;
+  void consumeLastOtpError() => _lastOtpError = null;
+
   Future<bool> sendOtp(String phone) async {
+    _lastOtpError = null;
     try {
       final api  = ApiService(token: _token);
       final norm = ApiService.normalisePhone(phone);
-      final res  = await api.post('/auth/customer/send-otp', {'phone': norm});
+      int statusCode = 0;
+      final res = await api.post('/auth/customer/send-otp', {'phone': norm},
+          onStatusCode: (code) => statusCode = code);
+      if (statusCode == 429) {
+        _lastOtpError = (res is Map && res['message'] is String)
+            ? res['message'] as String
+            : 'تم تجاوز الحد المسموح لإرسال رمز التحقق. حاول لاحقاً.';
+        return false;
+      }
       return res != null;
     } catch (_) {
       return false;
@@ -84,6 +125,7 @@ class AppState extends ChangeNotifier {
         notifyListeners();
         // Flush any FCM token that arrived before login completed
         unawaited(_flushFcmToken());
+        unawaited(AnalyticsService.instance.logCompleteRegistration());
         return true;
       }
       return false;
@@ -545,6 +587,11 @@ class AppState extends ChangeNotifier {
     }
     _saveCart();
     notifyListeners();
+    unawaited(AnalyticsService.instance.logAddToCart(
+      productId: (product['id'] ?? '') as String,
+      productName: (product['name'] ?? '') as String,
+      price: ((product['price'] is num ? product['price'] : 0) as num).toDouble(),
+    ));
     return true;
   }
 
@@ -607,6 +654,63 @@ class AppState extends ChangeNotifier {
   bool _checkingOut = false;
   bool get checkingOut => _checkingOut;
 
+  /// Heuristic: server messages produced by the cart/stock/merchant validation
+  /// path inside `prisma.$transaction` in `backend/src/routes/customer.js`
+  /// (e.g. "out of stock", "Merchant is not available", "products are
+  /// unavailable", "الحد الأدنى", "الشحن غير متاح", "منطقة الشحن غير صالحة").
+  /// Detecting these lets the UI raise an actionable modal instead of a snackbar.
+  bool _looksLikeCartInvalidMessage(String? msg) {
+    if (msg == null) return false;
+    final m = msg.toLowerCase();
+    return m.contains('out of stock') ||
+        m.contains('unavailable') ||
+        m.contains('merchant is not available') ||
+        msg.contains('غير متاح') ||
+        msg.contains('غير متاحة') ||
+        msg.contains('غير صالحة') ||
+        msg.contains('الحد الأدنى') ||
+        msg.contains('نفذت');
+  }
+
+  String _truncateForLog(String s, int max) =>
+      s.length <= max ? s : '${s.substring(0, max)}…(truncated)';
+
+  Future<PackageInfo> _getPackageInfo() async {
+    return _cachedPackageInfo ??= await PackageInfo.fromPlatform();
+  }
+
+  Future<void> _logCheckoutFailure({
+    required CheckoutErrorKind kind,
+    required int? statusCode,
+    required dynamic responseBody,
+    required String shippingZoneId,
+  }) async {
+    try {
+      final pkg = await _getPackageInfo();
+      final bodyStr =
+          _truncateForLog(jsonEncode(responseBody ?? const {}), 1024);
+      await FirebaseCrashlytics.instance.recordError(
+        Exception('checkout_${kind.name}_${statusCode ?? 'no_status'}'),
+        StackTrace.current,
+        reason: 'Checkout failure',
+        fatal: false,
+        information: <DiagnosticsNode>[
+          DiagnosticsProperty<int?>('statusCode', statusCode),
+          DiagnosticsProperty<String>('responseBody', bodyStr),
+          DiagnosticsProperty<String?>('userId', _user?['id'] as String?),
+          DiagnosticsProperty<String>(
+              'appVersion', '${pkg.version}+${pkg.buildNumber}'),
+          DiagnosticsProperty<String>('shippingZoneId', shippingZoneId),
+          DiagnosticsProperty<int>('cartItemCount', _cart.length),
+          DiagnosticsProperty<double>('cartTotal', cartTotal),
+        ],
+      );
+    } catch (e) {
+      // Logging itself must never break the checkout path.
+      debugPrint('[CHECKOUT] Crashlytics recordError failed: $e');
+    }
+  }
+
   Future<bool> checkout({
     required String name,
     required String phone,
@@ -631,6 +735,7 @@ class AppState extends ChangeNotifier {
     debugPrint('[$traceLabel] checkout started');
     debugPrint('[$traceLabel] JWT token exists? ${(_token != null && _token!.isNotEmpty) ? 'yes' : 'no'}');
     _checkoutSessionExpired = false;
+    _lastCheckoutError = null;
 
     if (!isLoggedIn || _cart.isEmpty) {
       logResult(false, 'preflight_failed');
@@ -638,6 +743,10 @@ class AppState extends ChangeNotifier {
     }
     _checkingOut = true;
     notifyListeners();
+    unawaited(AnalyticsService.instance.logInitiateCheckout(
+      itemCount: _cart.length,
+      totalPrice: cartTotal,
+    ));
     final api = ApiService(token: _token);
     // Extract merchantId from first cart item (all items must belong to same merchant)
     final merchantId = _cart.first['merchantId'] as String?;
@@ -678,35 +787,88 @@ class AppState extends ChangeNotifier {
         responseStatusCode = statusCode;
       });
       _checkingOut = false;
-      if (responseStatusCode == 401 || responseStatusCode == 403) {
-        _checkoutSessionExpired = true;
-        notifyListeners();
-        logResult(false, 'auth_invalid_${responseStatusCode ?? 'unknown'}');
-        return false;
-      }
+
+      // ── Success ────────────────────────────────────────────────────────────
       if (res is Map && res['id'] != null) {
+        unawaited(AnalyticsService.instance.logPurchase(
+          orderId: res['id'] as String,
+          totalPrice: cartTotal,
+          itemCount: _cart.length,
+        ));
         _cart = [];
         await _saveCart();
         await loadOrders();
-        // Refresh wallet balance after wallet payment
         if (useWallet && walletAmount > 0) {
           await refreshProfile(silent: true);
         }
+        _lastCheckoutError = null;
         notifyListeners();
         logResult(true, 'order_created');
         return true;
       }
-      notifyListeners();
-      logResult(
-        false,
-        'api_returned_no_order_id${responseStatusCode != null ? '_$responseStatusCode' : ''}',
+
+      // ── Failure: categorise ────────────────────────────────────────────────
+      final code = responseStatusCode;
+      final msgRaw = (res is Map ? res['message'] : null) as String?;
+      final errorsArr = (res is Map ? res['errors'] : null);
+
+      CheckoutErrorKind kind;
+      String userMsg;
+
+      if (code == 401 || code == 403) {
+        kind = CheckoutErrorKind.authInvalid;
+        userMsg = 'انتهت صلاحية الجلسة، برجاء تسجيل الدخول مرة أخرى';
+        _checkoutSessionExpired = true; // legacy flag kept for any other consumer
+      } else if (code == 400 && _looksLikeCartInvalidMessage(msgRaw)) {
+        kind = CheckoutErrorKind.cartInvalid;
+        userMsg = msgRaw ?? 'يوجد منتج غير متاح في السلة، يرجى تحديث السلة';
+      } else if (code == 400) {
+        kind = CheckoutErrorKind.validation;
+        if (errorsArr is List && errorsArr.isNotEmpty) {
+          final first = errorsArr.first;
+          if (first is Map && first['message'] is String) {
+            userMsg = first['message'] as String;
+          } else {
+            userMsg = msgRaw ?? 'بيانات الطلب غير صحيحة';
+          }
+        } else {
+          userMsg = msgRaw ?? 'بيانات الطلب غير صحيحة';
+        }
+      } else {
+        kind = CheckoutErrorKind.server;
+        userMsg = msgRaw ?? 'تعذر إتمام الطلب، يرجى المحاولة لاحقاً';
+      }
+
+      _lastCheckoutError = CheckoutError(
+        kind: kind,
+        statusCode: code,
+        message: userMsg,
       );
+      unawaited(_logCheckoutFailure(
+        kind: kind,
+        statusCode: code,
+        responseBody: res,
+        shippingZoneId: shippingZoneId,
+      ));
+      notifyListeners();
+      logResult(false, 'checkout_${kind.name}_${code ?? 'no_status'}');
       return false;
     } catch (e, st) {
       debugPrint('[$traceLabel] checkout() threw exception: $e');
       debugPrintStack(stackTrace: st);
       _checkingOut = false;
       _checkoutSessionExpired = false;
+      _lastCheckoutError = CheckoutError(
+        kind: CheckoutErrorKind.network,
+        statusCode: null,
+        message: 'تعذر الاتصال بالخادم — تحقق من الإنترنت ثم حاول مجددًا',
+      );
+      unawaited(_logCheckoutFailure(
+        kind: CheckoutErrorKind.network,
+        statusCode: null,
+        responseBody: {'exception': e.toString()},
+        shippingZoneId: shippingZoneId,
+      ));
       notifyListeners();
       logResult(false, 'exception');
       return false;
