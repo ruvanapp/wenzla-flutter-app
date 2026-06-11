@@ -83,11 +83,25 @@ class AppState extends ChangeNotifier {
     if (isLoggedIn) await _flushFcmToken();
   }
 
+  // ── OTP error surfacing ────────────────────────────────────────────────────
+  String? _lastOtpError;
+  String? get lastOtpError => _lastOtpError;
+  void consumeLastOtpError() => _lastOtpError = null;
+
   Future<bool> sendOtp(String phone) async {
+    _lastOtpError = null;
     try {
       final api  = ApiService(token: _token);
       final norm = ApiService.normalisePhone(phone);
-      final res  = await api.post('/auth/customer/send-otp', {'phone': norm});
+      int statusCode = 0;
+      final res = await api.post('/auth/customer/send-otp', {'phone': norm},
+          onStatusCode: (code) => statusCode = code);
+      if (statusCode == 429) {
+        _lastOtpError = (res is Map && res['message'] is String)
+            ? res['message'] as String
+            : 'تم تجاوز الحد المسموح لإرسال رمز التحقق. حاول لاحقاً.';
+        return false;
+      }
       return res != null;
     } catch (_) {
       return false;

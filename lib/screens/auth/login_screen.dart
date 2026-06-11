@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -20,9 +22,12 @@ class _LoginScreenState extends State<LoginScreen> {
   bool   _otpSent   = false;
   bool   _loading   = false;
   String _error     = '';
+  int    _cooldown  = 0;
+  Timer? _cooldownTimer;
 
   @override
   void dispose() {
+    _cooldownTimer?.cancel();
     _phoneCtrl.dispose();
     _otpCtrl.dispose();
     _referralCtrl.dispose();
@@ -202,10 +207,27 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: _verifyOtp,
                 ),
                 const SizedBox(height: 12),
+                if (_cooldown > 0)
+                  Text(
+                    'إعادة الإرسال بعد $_cooldown ثانية',
+                    style: const TextStyle(
+                      fontFamily: 'Cairo', fontSize: 13, color: kTextMuted),
+                  )
+                else
+                  TextButton.icon(
+                    icon:  const Icon(Icons.refresh_rounded, size: 16),
+                    label: const Text('إعادة إرسال الرمز',
+                        style: TextStyle(fontFamily: 'Cairo')),
+                    onPressed: _sendOtp,
+                  ),
+                const SizedBox(height: 4),
                 TextButton.icon(
                   icon:  const Icon(Icons.arrow_back_rounded, size: 16),
                   label: const Text('تغيير رقم الهاتف', style: TextStyle(fontFamily: 'Cairo')),
-                  onPressed: () => setState(() { _otpSent = false; _error = ''; }),
+                  onPressed: () => setState(() {
+                    _otpSent = false; _error = '';
+                    _cooldownTimer?.cancel(); _cooldown = 0;
+                  }),
                 ),
               ],
 
@@ -275,9 +297,32 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     setState(() { _loading = true; _error = ''; });
     final phone = '$_dialCode${_phoneCtrl.text.trim()}';
-    final ok    = await context.read<AppState>().sendOtp(phone);
-    setState(() { _loading = false; _otpSent = ok; });
-    if (!ok) setState(() => _error = 'فشل إرسال رمز التحقق، حاول مرة أخرى');
+    final st    = context.read<AppState>();
+    final ok    = await st.sendOtp(phone);
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _otpSent = _otpSent || ok;
+    });
+    if (ok) {
+      _startCooldown();
+    } else {
+      final serverMsg = st.lastOtpError;
+      st.consumeLastOtpError();
+      setState(() => _error = serverMsg ?? 'فشل إرسال رمز التحقق، حاول مرة أخرى');
+    }
+  }
+
+  void _startCooldown() {
+    _cooldownTimer?.cancel();
+    setState(() => _cooldown = 60);
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() {
+        _cooldown--;
+        if (_cooldown <= 0) t.cancel();
+      });
+    });
   }
 
   Future<void> _verifyOtp() async {
