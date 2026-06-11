@@ -59,7 +59,7 @@
 
 The admin login schema requires `identifier` (not `phone`) as the key:
 ```json
-{ "identifier": "admin", "password": ".Moha13579#" }
+{ "identifier": "admin", "password": "<REDACTED — use ADMIN_PASSWORD env var>" }
 ```
 Previous test used `{ "phone": ..., "password": ... }` which caused timeouts.
 

@@ -211,7 +211,7 @@ Since we cannot open a real browser in this environment, we performed static ana
 - **Branch:** admin-notifications
 - **Commit:** 7116e5a
 - **Deployment ID:** 84caac8b-9f28-4a05-8321-7ac106fea729
-- **Admin login:** `admin` / `.Moha13579#`
+- **Admin login:** `admin` / `<REDACTED — use ADMIN_PASSWORD env var>`
 
 ---
 

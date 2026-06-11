@@ -220,7 +220,7 @@
 - **Branch:** admin-notifications
 - **Commit:** 1bc09f2
 - **Deployment ID:** d5a4e959-f290-42e9-aba4-a043445d314a
-- **Admin login:** `admin` / `.Moha13579#`
+- **Admin login:** `admin` / `<REDACTED — use ADMIN_PASSWORD env var>`
 
 ---
 

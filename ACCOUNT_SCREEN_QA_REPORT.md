@@ -46,7 +46,7 @@ All routes probed against the live production backend immediately after deploy.
 | Test | Result | Status |
 |------|--------|--------|
 | Admin dashboard loads without error | Page loads, no "Cannot GET" | ✅ PASS |
-| Admin login (`admin` / `.Moha13579#`) | Authenticated, redirected within `/dashboard` | ✅ PASS |
+| Admin login (`admin` / `<REDACTED>`) | Authenticated, redirected within `/dashboard` | ✅ PASS |
 
 **Phase 2 result: 2/2 PASS**
 

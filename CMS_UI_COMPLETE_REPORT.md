@@ -143,7 +143,7 @@ Applied to both `_buildDynamicBannerSlide()` and `_buildPromoBanner()`.
 ## Admin Dashboard Usage Guide
 
 **URL:** https://wenzla-backend-production.up.railway.app/dashboard  
-**Login:** admin / .Moha13579# (payload: `{ "identifier": "admin", "password": "..." }`)
+**Login:** admin / <REDACTED — use ADMIN_PASSWORD env var>
 
 **To add a banner with image:**
 1. Open "🏠 Home CMS" tab
