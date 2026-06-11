@@ -50,7 +50,7 @@
             android:value="\ 2131883470717364"/>
         <meta-data
             android:name="com.facebook.sdk.ClientToken"
-            android:value=""/>
+            android:value="92f76a7583e78652c37b4274e593559e"/>
         <meta-data
             android:name="com.facebook.sdk.AutoLogAppEventsEnabled"
             android:value="true"/>
