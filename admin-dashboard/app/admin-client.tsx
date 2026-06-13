@@ -314,6 +314,9 @@ const ROLE_LABELS: Record<DashboardRoleKey, string> = {
   FINANCE_MANAGER: 'Finance Manager',
 };
 
+const ADMIN_TOKEN_STORAGE_KEY = 'wenzla_admin_token';
+const ADMIN_USER_STORAGE_KEY = 'wenzla_admin_user';
+
 const PERMISSION_LABELS: Record<string, string> = {
   'overview.view': 'عرض لوحة التحكم',
   'orders.view': 'عرض الطلبات',
@@ -874,8 +877,19 @@ export default function AdminClient() {
   // Phase 3: Orders table sort
   const [ordersSortKey, setOrdersSortKey] = useState<string>('createdAt');
   const [ordersSortDir, setOrdersSortDir] = useState<'asc' | 'desc'>('desc');
-  const [token, setToken] = useState('');
-  const [sessionUser, setSessionUser] = useState<SessionAdminUser | null>(null);
+  const [token, setToken] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? '';
+  });
+  const [sessionUser, setSessionUser] = useState<SessionAdminUser | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(ADMIN_USER_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [overview, setOverview] = useState<Overview>({ merchants: 0, products: 0, orders: 0, sales: 0, commission: 0 });
@@ -1074,6 +1088,15 @@ export default function AdminClient() {
   const activePanelAllowed = useMemo(() => (
     visibleNavGroups.some(group => group.items.some(item => item.key === activePanel))
   ), [visibleNavGroups, activePanel]);
+  const canViewOrders = hasPermission(sessionUser, 'orders.view');
+  const canViewStores = hasPermission(sessionUser, 'stores.view');
+  const canViewProducts = hasPermission(sessionUser, 'products.view');
+  const canViewCustomers = hasPermission(sessionUser, 'customers.view');
+  const canViewContent = hasPermission(sessionUser, 'content.manage');
+  const canViewNotifications = hasPermission(sessionUser, 'notifications.manage');
+  const canViewFinance = hasPermission(sessionUser, 'finance.reports.view');
+  const canManageSettings = hasPermission(sessionUser, 'settings.manage');
+  const canViewAudit = hasPermission(sessionUser, 'audit.view');
   const totalPages = Math.max(1, Math.ceil(orderTotal / PAGE_SIZE));
 
   // ── Dark mode ─────────────────────────────────────────────────────────────────
@@ -1154,6 +1177,26 @@ export default function AdminClient() {
     url.searchParams.set('panel', activePanel);
     window.history.replaceState({}, '', url.toString());
   }, [activePanel]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (token) {
+      localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+      setAdminToken(token);
+    } else {
+      localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+      setAdminToken('');
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (sessionUser) {
+      localStorage.setItem(ADMIN_USER_STORAGE_KEY, JSON.stringify(sessionUser));
+    } else {
+      localStorage.removeItem(ADMIN_USER_STORAGE_KEY);
+    }
+  }, [sessionUser]);
 
   // ── Panel data loading ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -2564,23 +2607,29 @@ export default function AdminClient() {
                 <div className="exec-summary-card revenue">
                   <div className="exec-card-label">💵 إيرادات اليوم</div>
                   <div className="exec-card-value">{formatEGP(overview.revenueToday ?? 0)}</div>
-                  <div className="exec-card-foot">من <strong>{(overview.ordersToday ?? 0).toLocaleString('ar-EG')}</strong> طلب اليوم</div>
+                  {canViewOrders && <div className="exec-card-foot">من <strong>{(overview.ordersToday ?? 0).toLocaleString('ar-EG')}</strong> طلب اليوم</div>}
                 </div>
-                <div className="exec-summary-card orders">
-                  <div className="exec-card-label">📦 إجمالي الطلبات</div>
-                  <div className="exec-card-value">{overview.orders.toLocaleString('ar-EG')}</div>
-                  <div className="exec-card-foot">إجمالي المبيعات: <strong>{formatEGP(overview.sales)}</strong></div>
-                </div>
-                <div className="exec-summary-card merchants">
-                  <div className="exec-card-label">🏪 التجار النشطون</div>
-                  <div className="exec-card-value">{overview.merchants.toLocaleString('ar-EG')}</div>
-                  <div className="exec-card-foot">{overview.products.toLocaleString('ar-EG')} منتج معتمد</div>
-                </div>
-                <div className="exec-summary-card customers">
-                  <div className="exec-card-label">👥 العملاء</div>
-                  <div className="exec-card-value">{(overview.activeCustomers ?? 0).toLocaleString('ar-EG')}</div>
-                  <div className="exec-card-foot">متوسط الطلب: <strong>{formatEGP(overview.averageOrderValue ?? 0)}</strong></div>
-                </div>
+                {canViewOrders && (
+                  <div className="exec-summary-card orders">
+                    <div className="exec-card-label">📦 إجمالي الطلبات</div>
+                    <div className="exec-card-value">{overview.orders.toLocaleString('ar-EG')}</div>
+                    <div className="exec-card-foot">إجمالي المبيعات: <strong>{formatEGP(overview.sales)}</strong></div>
+                  </div>
+                )}
+                {canViewStores && (
+                  <div className="exec-summary-card merchants">
+                    <div className="exec-card-label">🏪 التجار النشطون</div>
+                    <div className="exec-card-value">{overview.merchants.toLocaleString('ar-EG')}</div>
+                    {canViewProducts && <div className="exec-card-foot">{overview.products.toLocaleString('ar-EG')} منتج معتمد</div>}
+                  </div>
+                )}
+                {canViewCustomers && (
+                  <div className="exec-summary-card customers">
+                    <div className="exec-card-label">👥 العملاء</div>
+                    <div className="exec-card-value">{(overview.activeCustomers ?? 0).toLocaleString('ar-EG')}</div>
+                    {canViewOrders && <div className="exec-card-foot">متوسط الطلب: <strong>{formatEGP(overview.averageOrderValue ?? 0)}</strong></div>}
+                  </div>
+                )}
               </div>
 
               {/* ── Quick actions ─────────────────────────────────────────── */}
@@ -2589,134 +2638,152 @@ export default function AdminClient() {
                   <h3>⚡ إجراءات سريعة</h3>
                 </div>
                 <div className="exec-quick-grid">
-                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'orders') && setActivePanel('orders')}>
-                    <span className="qa-icon">📦</span>
-                    <div>
-                      <strong>الطلبات</strong>
-                      <span>{orderStats.pending} في الانتظار</span>
-                    </div>
-                  </button>
-                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'merchants') && setActivePanel('merchants')}>
-                    <span className="qa-icon">🏪</span>
-                    <div>
-                      <strong>التجار</strong>
-                      <span>إدارة المتاجر</span>
-                    </div>
-                  </button>
-                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'products') && setActivePanel('products')}>
-                    <span className="qa-icon">🛒</span>
-                    <div>
-                      <strong>المنتجات</strong>
-                      <span>{overview.products} منتج</span>
-                    </div>
-                  </button>
-                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'shipping') && setActivePanel('shipping')}>
-                    <span className="qa-icon">🚚</span>
-                    <div>
-                      <strong>رسوم الشحن</strong>
-                      <span>إدارة المحافظات</span>
-                    </div>
-                  </button>
-                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'financial') && setActivePanel('financial')}>
-                    <span className="qa-icon">💰</span>
-                    <div>
-                      <strong>المالية</strong>
-                      <span>العمولات والإعدادات</span>
-                    </div>
-                  </button>
-                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'notifications') && setActivePanel('notifications')}>
-                    <span className="qa-icon">🔔</span>
-                    <div>
-                      <strong>الإشعارات</strong>
-                      <span>إرسال إشعار جديد</span>
-                    </div>
-                  </button>
+                  {canAccessPanel(sessionUser, 'orders') && (
+                    <button className="exec-quick-btn" onClick={() => setActivePanel('orders')}>
+                      <span className="qa-icon">📦</span>
+                      <div>
+                        <strong>الطلبات</strong>
+                        <span>{orderStats.pending} في الانتظار</span>
+                      </div>
+                    </button>
+                  )}
+                  {canAccessPanel(sessionUser, 'merchants') && (
+                    <button className="exec-quick-btn" onClick={() => setActivePanel('merchants')}>
+                      <span className="qa-icon">🏪</span>
+                      <div>
+                        <strong>التجار</strong>
+                        <span>إدارة المتاجر</span>
+                      </div>
+                    </button>
+                  )}
+                  {canAccessPanel(sessionUser, 'products') && (
+                    <button className="exec-quick-btn" onClick={() => setActivePanel('products')}>
+                      <span className="qa-icon">🛒</span>
+                      <div>
+                        <strong>المنتجات</strong>
+                        <span>{overview.products} منتج</span>
+                      </div>
+                    </button>
+                  )}
+                  {canAccessPanel(sessionUser, 'shipping') && (
+                    <button className="exec-quick-btn" onClick={() => setActivePanel('shipping')}>
+                      <span className="qa-icon">🚚</span>
+                      <div>
+                        <strong>رسوم الشحن</strong>
+                        <span>إدارة المحافظات</span>
+                      </div>
+                    </button>
+                  )}
+                  {canAccessPanel(sessionUser, 'financial') && (
+                    <button className="exec-quick-btn" onClick={() => setActivePanel('financial')}>
+                      <span className="qa-icon">💰</span>
+                      <div>
+                        <strong>المالية والعمولات</strong>
+                        <span>العمولات والإعدادات</span>
+                      </div>
+                    </button>
+                  )}
+                  {canAccessPanel(sessionUser, 'notifications') && (
+                    <button className="exec-quick-btn" onClick={() => setActivePanel('notifications')}>
+                      <span className="qa-icon">🔔</span>
+                      <div>
+                        <strong>الإشعارات</strong>
+                        <span>إرسال إشعار جديد</span>
+                      </div>
+                    </button>
+                  )}
                 </div>
               </div>
 
               {/* ── Top performers + recent activity ─────────────────────── */}
               <div className="exec-bottom-grid">
-                <div className="exec-list-card">
-                  <div className="exec-section-head">
-                    <h3>🏆 أعلى المتاجر</h3>
-                    <button className="exec-link" onClick={() => canAccessPanel(sessionUser, 'merchants') && setActivePanel('merchants')}>عرض الكل ←</button>
+                {canViewStores && (
+                  <div className="exec-list-card">
+                    <div className="exec-section-head">
+                      <h3>🏆 أعلى المتاجر</h3>
+                      <button className="exec-link" onClick={() => canAccessPanel(sessionUser, 'merchants') && setActivePanel('merchants')}>عرض الكل ←</button>
+                    </div>
+                    {topVendors.length === 0 ? (
+                      <div className="exec-empty">لا توجد بيانات بعد</div>
+                    ) : (
+                      <ol className="exec-rank-list">
+                        {topVendors.slice(0, 5).map((v, i) => (
+                          <li key={i}>
+                            <span className="rank-num">{i + 1}</span>
+                            <div className="rank-info">
+                              <strong>{v.storeName ?? 'متجر'}</strong>
+                              {canViewOrders && <span>{v.totalOrders} طلب</span>}
+                            </div>
+                            <span className="rank-amount">{formatEGP(v.totalRevenue)}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
                   </div>
-                  {topVendors.length === 0 ? (
-                    <div className="exec-empty">لا توجد بيانات بعد</div>
-                  ) : (
-                    <ol className="exec-rank-list">
-                      {topVendors.slice(0, 5).map((v, i) => (
-                        <li key={i}>
-                          <span className="rank-num">{i + 1}</span>
-                          <div className="rank-info">
-                            <strong>{v.storeName ?? 'متجر'}</strong>
-                            <span>{v.totalOrders} طلب</span>
-                          </div>
-                          <span className="rank-amount">{formatEGP(v.totalRevenue)}</span>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
+                )}
 
-                <div className="exec-list-card">
-                  <div className="exec-section-head">
-                    <h3>⭐ أعلى المنتجات</h3>
-                    <button className="exec-link" onClick={() => canAccessPanel(sessionUser, 'products') && setActivePanel('products')}>عرض الكل ←</button>
+                {canViewProducts && (
+                  <div className="exec-list-card">
+                    <div className="exec-section-head">
+                      <h3>⭐ أعلى المنتجات</h3>
+                      <button className="exec-link" onClick={() => canAccessPanel(sessionUser, 'products') && setActivePanel('products')}>عرض الكل ←</button>
+                    </div>
+                    {topProducts.length === 0 ? (
+                      <div className="exec-empty">لا توجد بيانات بعد</div>
+                    ) : (
+                      <ol className="exec-rank-list">
+                        {topProducts.slice(0, 5).map((p, i) => (
+                          <li key={i}>
+                            <span className="rank-num gold">{i + 1}</span>
+                            <div className="rank-info">
+                              <strong>{p.name ?? 'منتج'}</strong>
+                              <span>{p.totalSold} وحدة</span>
+                            </div>
+                            <span className="rank-amount">{formatEGP(p.totalRevenue)}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
                   </div>
-                  {topProducts.length === 0 ? (
-                    <div className="exec-empty">لا توجد بيانات بعد</div>
-                  ) : (
-                    <ol className="exec-rank-list">
-                      {topProducts.slice(0, 5).map((p, i) => (
-                        <li key={i}>
-                          <span className="rank-num gold">{i + 1}</span>
-                          <div className="rank-info">
-                            <strong>{p.name ?? 'منتج'}</strong>
-                            <span>{p.totalSold} وحدة</span>
-                          </div>
-                          <span className="rank-amount">{formatEGP(p.totalRevenue)}</span>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
+                )}
 
-                <div className="exec-list-card">
-                  <div className="exec-section-head">
-                    <h3>📋 آخر النشاط</h3>
-                    <button className="exec-link" onClick={() => canAccessPanel(sessionUser, 'activity') && setActivePanel('activity')}>عرض الكل ←</button>
+                {canViewAudit && (
+                  <div className="exec-list-card">
+                    <div className="exec-section-head">
+                      <h3>📋 آخر النشاط</h3>
+                      <button className="exec-link" onClick={() => canAccessPanel(sessionUser, 'activity') && setActivePanel('activity')}>عرض الكل ←</button>
+                    </div>
+                    {activityLog.length === 0 ? (
+                      <button className="exec-empty exec-empty-clickable" onClick={() => loadActivityLog(1)}>
+                        اضغط للتحميل
+                      </button>
+                    ) : (
+                      <ul className="exec-activity-list">
+                        {activityLog.slice(0, 6).map((a: any) => (
+                          <li key={a.id}>
+                            <span className="act-dot" style={{ background: a.action === 'DELETE' ? '#dc2626' : a.action === 'CREATE' ? '#16a34a' : '#3b82f6' }} />
+                            <div className="act-info">
+                              <strong>{a.adminUser?.name ?? a.actorUsername}</strong>
+                              <span>{a.action} · {a.entityType}</span>
+                            </div>
+                            <span className="act-time">{(() => {
+                              try {
+                                const d = new Date(a.createdAt);
+                                const diff = Date.now() - d.getTime();
+                                const m = Math.floor(diff / 60000);
+                                if (m < 1) return 'الآن';
+                                if (m < 60) return `${m}د`;
+                                const h = Math.floor(m / 60);
+                                if (h < 24) return `${h}س`;
+                                return `${Math.floor(h / 24)}ي`;
+                              } catch { return ''; }
+                            })()}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-                  {activityLog.length === 0 ? (
-                    <button className="exec-empty exec-empty-clickable" onClick={() => loadActivityLog(1)}>
-                      اضغط للتحميل
-                    </button>
-                  ) : (
-                    <ul className="exec-activity-list">
-                      {activityLog.slice(0, 6).map((a: any) => (
-                        <li key={a.id}>
-                          <span className="act-dot" style={{ background: a.action === 'DELETE' ? '#dc2626' : a.action === 'CREATE' ? '#16a34a' : '#3b82f6' }} />
-                          <div className="act-info">
-                            <strong>{a.adminUser?.name ?? a.actorUsername}</strong>
-                            <span>{a.action} · {a.entityType}</span>
-                          </div>
-                          <span className="act-time">{(() => {
-                            try {
-                              const d = new Date(a.createdAt);
-                              const diff = Date.now() - d.getTime();
-                              const m = Math.floor(diff / 60000);
-                              if (m < 1) return 'الآن';
-                              if (m < 60) return `${m}د`;
-                              const h = Math.floor(m / 60);
-                              if (h < 24) return `${h}س`;
-                              return `${Math.floor(h / 24)}ي`;
-                            } catch { return ''; }
-                          })()}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                )}
               </div>
 
               {/* KPI cards — 8 premium cards */}
@@ -2732,16 +2799,20 @@ export default function AdminClient() {
                   ))
                 ) : (
                   <>
-                <div className="an-card blue">
-                  <div className="an-card-icon">📦</div>
-                  <div className="an-card-label">إجمالي الطلبات</div>
-                  <div className="an-card-value">{overview.orders.toLocaleString('ar-EG')}</div>
-                </div>
-                <div className="an-card green">
-                  <div className="an-card-icon">🆕</div>
-                  <div className="an-card-label">طلبات اليوم</div>
-                  <div className="an-card-value">{(overview.ordersToday ?? orderStats.totalToday ?? 0).toLocaleString('ar-EG')}</div>
-                </div>
+                {canViewOrders && (
+                  <div className="an-card blue">
+                    <div className="an-card-icon">📦</div>
+                    <div className="an-card-label">إجمالي الطلبات</div>
+                    <div className="an-card-value">{overview.orders.toLocaleString('ar-EG')}</div>
+                  </div>
+                )}
+                {canViewOrders && (
+                  <div className="an-card green">
+                    <div className="an-card-icon">🆕</div>
+                    <div className="an-card-label">طلبات اليوم</div>
+                    <div className="an-card-value">{(overview.ordersToday ?? orderStats.totalToday ?? 0).toLocaleString('ar-EG')}</div>
+                  </div>
+                )}
                 <div className="an-card gold">
                   <div className="an-card-icon">💵</div>
                   <div className="an-card-label">إيرادات اليوم</div>
@@ -2752,31 +2823,39 @@ export default function AdminClient() {
                   <div className="an-card-label">إيرادات هذا الشهر</div>
                   <div className="an-card-value" style={{ fontSize: 18 }}>{formatEGP(overview.revenueMonth ?? 0)}</div>
                 </div>
-                <div className="an-card blue">
-                  <div className="an-card-icon">👥</div>
-                  <div className="an-card-label">العملاء النشطون</div>
-                  <div className="an-card-value">{(overview.activeCustomers ?? 0).toLocaleString('ar-EG')}</div>
-                </div>
-                <div className="an-card green">
-                  <div className="an-card-icon">🏪</div>
-                  <div className="an-card-label">التجار</div>
-                  <div className="an-card-value">{overview.merchants.toLocaleString('ar-EG')}</div>
-                </div>
-                <div className="an-card gold">
-                  <div className="an-card-icon">🛒</div>
-                  <div className="an-card-label">المنتجات</div>
-                  <div className="an-card-value">{overview.products.toLocaleString('ar-EG')}</div>
-                </div>
-                <div className="an-card orange">
-                  <div className="an-card-icon">💰</div>
-                  <div className="an-card-label">متوسط قيمة الطلب</div>
-                  <div className="an-card-value" style={{ fontSize: 18 }}>{formatEGP(overview.averageOrderValue ?? 0)}</div>
-                </div>
+                {canViewCustomers && (
+                  <div className="an-card blue">
+                    <div className="an-card-icon">👥</div>
+                    <div className="an-card-label">العملاء النشطون</div>
+                    <div className="an-card-value">{(overview.activeCustomers ?? 0).toLocaleString('ar-EG')}</div>
+                  </div>
+                )}
+                {canViewStores && (
+                  <div className="an-card green">
+                    <div className="an-card-icon">🏪</div>
+                    <div className="an-card-label">التجار</div>
+                    <div className="an-card-value">{overview.merchants.toLocaleString('ar-EG')}</div>
+                  </div>
+                )}
+                {canViewProducts && (
+                  <div className="an-card gold">
+                    <div className="an-card-icon">🛒</div>
+                    <div className="an-card-label">المنتجات</div>
+                    <div className="an-card-value">{overview.products.toLocaleString('ar-EG')}</div>
+                  </div>
+                )}
+                {canViewOrders && (
+                  <div className="an-card orange">
+                    <div className="an-card-icon">💰</div>
+                    <div className="an-card-label">متوسط قيمة الطلب</div>
+                    <div className="an-card-value" style={{ fontSize: 18 }}>{formatEGP(overview.averageOrderValue ?? 0)}</div>
+                  </div>
+                )}
                   </>
                 )}
               </div>
 
-              {/* Phase 2: Orders 30d + Revenue 30d charts */}
+              {canViewOrders && (
               <div className="two-col">
                 <div className="chart-panel">
                   <h3 className="chart-panel-title">📊 الطلبات آخر 30 يوم</h3>
@@ -2815,8 +2894,9 @@ export default function AdminClient() {
                   })()}
                 </div>
               </div>
+              )}
 
-              {/* Phase 2: Status distribution + top governorates */}
+              {canViewOrders && (
               <div className="two-col">
                 <div className="chart-panel">
                   <h3 className="chart-panel-title">📊 توزيع حالات الطلبات</h3>
@@ -2876,6 +2956,7 @@ export default function AdminClient() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* Existing 14-day chart + today status */}
               <div className="two-col">
