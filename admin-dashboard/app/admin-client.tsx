@@ -79,6 +79,7 @@ type FullOrder = {
   customerPhone: string;
   deliveryAddress: string;
   notes?: string;
+  supportNotes?: string;
   status: string;
   total: string;
   subtotal: string;
@@ -154,7 +155,38 @@ type RevenuePoint = { date: string; revenue: number; orders: number };
 type TopProduct = { name: string; storeName: string; totalSold: number; totalRevenue: number };
 type TopVendor = { storeName: string; totalOrders: number; totalRevenue: number };
 type AdminUser = { id: string; name?: string; phone: string; role: string; createdAt: string; isBanned?: boolean; walletBalance?: string | number; _count?: { orders: number } };
-type Employee = { id: string; name: string; phone: string; permissions: string[]; createdAt: string };
+type DashboardRoleKey = 'SUPER_ADMIN' | 'ADMIN' | 'ORDER_MANAGER' | 'CONTENT_MANAGER' | 'SUPPORT_AGENT' | 'FINANCE_MANAGER';
+type DashboardRole = { key: DashboardRoleKey; name: string; description?: string; permissions: string[] };
+type DashboardPermission = { key: string; name: string; description?: string };
+type DashboardUser = {
+  id: string;
+  username?: string | null;
+  name?: string | null;
+  phone?: string | null;
+  role: string;
+  dashboardStatus: 'ACTIVE' | 'DISABLED';
+  lastLoginAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+  dashboardRoles: { id: string; key: DashboardRoleKey; name: string; description?: string | null }[];
+  dashboardRoleKeys: DashboardRoleKey[];
+  dashboardPermissions: string[];
+  isSuperAdmin: boolean;
+  primaryRoleKey?: DashboardRoleKey | null;
+  primaryRoleName?: string | null;
+};
+type SessionAdminUser = {
+  id: string;
+  username?: string | null;
+  name?: string | null;
+  phone?: string | null;
+  dashboardStatus?: 'ACTIVE' | 'DISABLED' | null;
+  dashboardRoles?: { id: string; key: DashboardRoleKey; name: string; description?: string | null }[];
+  dashboardRoleKeys?: DashboardRoleKey[];
+  dashboardPermissions?: string[];
+  isSuperAdmin?: boolean;
+  lastLoginAt?: string | null;
+};
 type Activity = { id: string; action: string; details?: string; adminId?: string; createdAt: string };
 type WalletRechargeRequest = {
   id: string;
@@ -244,34 +276,84 @@ const WALLET_MANUAL_CREDIT_REASON_AR: Record<WalletManualCreditReason, string> =
 
 const NAV_ITEMS = [
   { group: 'الرئيسية', items: [
-    { key: 'overview',    icon: '📊', label: 'نظرة عامة' },
+    { key: 'overview',    icon: '📊', label: 'نظرة عامة', permissions: ['overview.view'] },
   ]},
   { group: 'العمليات', items: [
-    { key: 'orders',      icon: '📦', label: 'الطلبات' },
-    { key: 'merchants',   icon: '🏪', label: 'التجار' },
-    { key: 'products',    icon: '🛒', label: 'المنتجات' },
-    { key: 'users',       icon: '👥', label: 'المستخدمون' },
+    { key: 'orders',      icon: '📦', label: 'الطلبات', permissions: ['orders.view'] },
+    { key: 'merchants',   icon: '🏪', label: 'التجار', permissions: ['stores.view'] },
+    { key: 'products',    icon: '🛒', label: 'المنتجات', permissions: ['products.view'] },
+    { key: 'users',       icon: '👥', label: 'المستخدمون', permissions: ['customers.view'] },
   ]},
   { group: 'التسويق', items: [
-    { key: 'home_cms',    icon: '🏠', label: 'محتوى الرئيسية' },
-    { key: 'notifications', icon: '🔔', label: 'الإشعارات' },
+    { key: 'home_cms',    icon: '🏠', label: 'محتوى الرئيسية', permissions: ['content.manage'] },
+    { key: 'notifications', icon: '🔔', label: 'الإشعارات', permissions: ['notifications.manage'] },
   ]},
   { group: 'المالية', items: [
-    { key: 'financial',   icon: '💰', label: 'المالية والعمولات' },
-    { key: 'shipping',    icon: '🚚', label: 'رسوم الشحن' },
-    { key: 'referrals',   icon: '🤝', label: 'نظام الإحالة' },
-    { key: 'wallet_manual_credit', icon: '💳', label: 'إضافة رصيد يدوي' },
-    { key: 'wallet_recharge_requests', icon: '🏦', label: 'طلبات شحن المحفظة' },
-    { key: 'wallet_transactions', icon: '📒', label: 'سجل معاملات المحفظة' },
-    { key: 'whatsapp_support', icon: '💬', label: 'دعم واتساب' },
+    { key: 'financial',   icon: '💰', label: 'المالية والعمولات', permissions: ['finance.reports.view'] },
+    { key: 'shipping',    icon: '🚚', label: 'رسوم الشحن', permissions: ['settings.manage'] },
+    { key: 'referrals',   icon: '🤝', label: 'نظام الإحالة', permissions: ['settings.manage'] },
+    { key: 'wallet_manual_credit', icon: '💳', label: 'إضافة رصيد يدوي', permissions: ['wallet.manual_adjust.manage'] },
+    { key: 'wallet_recharge_requests', icon: '🏦', label: 'طلبات شحن المحفظة', permissions: ['wallet.view'] },
+    { key: 'wallet_transactions', icon: '📒', label: 'سجل معاملات المحفظة', permissions: ['wallet.view'] },
+    { key: 'whatsapp_support', icon: '💬', label: 'دعم واتساب', permissions: ['settings.manage'] },
   ]},
   { group: 'الإدارة', items: [
-    { key: 'technical',   icon: '⚙️',  label: 'المراقبة التقنية' },
-    { key: 'activity',    icon: '📋', label: 'سجل النشاط' },
-    { key: 'security',    icon: '🔐', label: 'الصلاحيات والأمان' },
-    { key: 'roadmap',     icon: '🗺️',  label: 'خارطة الطريق' },
+    { key: 'technical',   icon: '⚙️',  label: 'المراقبة التقنية', permissions: ['monitoring.view'] },
+    { key: 'activity',    icon: '📋', label: 'سجل النشاط', permissions: ['audit.view'] },
+    { key: 'security',    icon: '🔐', label: 'الصلاحيات والأمان', permissions: ['dashboard_users.view'] },
+    { key: 'roadmap',     icon: '🗺️',  label: 'خارطة الطريق', permissions: ['overview.view'] },
   ]},
 ];
+
+const ROLE_LABELS: Record<DashboardRoleKey, string> = {
+  SUPER_ADMIN: 'Super Admin',
+  ADMIN: 'Admin',
+  ORDER_MANAGER: 'Order Manager',
+  CONTENT_MANAGER: 'Content Manager',
+  SUPPORT_AGENT: 'Support Agent',
+  FINANCE_MANAGER: 'Finance Manager',
+};
+
+const PERMISSION_LABELS: Record<string, string> = {
+  'overview.view': 'عرض لوحة التحكم',
+  'orders.view': 'عرض الطلبات',
+  'orders.update_status': 'تحديث حالة الطلب',
+  'orders.export': 'تصدير الطلبات',
+  'orders.print': 'طباعة الطلبات',
+  'stores.view': 'عرض المتاجر',
+  'stores.manage': 'إدارة المتاجر',
+  'products.view': 'عرض المنتجات',
+  'products.manage': 'إدارة المنتجات',
+  'customers.view': 'عرض العملاء',
+  'customers.manage': 'إدارة العملاء',
+  'support_notes.manage': 'إضافة ملاحظات الدعم',
+  'content.manage': 'إدارة البانرات والأقسام والمحتوى',
+  'notifications.manage': 'إدارة الإشعارات',
+  'finance.reports.view': 'عرض التقارير المالية',
+  'wallet.view': 'عرض معاملات المحفظة',
+  'wallet.recharge.manage': 'إدارة طلبات شحن المحفظة',
+  'wallet.manual_adjust.manage': 'إضافة/خصم رصيد يدوي',
+  'refunds.manage': 'إدارة المرتجعات',
+  'settings.manage': 'إدارة إعدادات النظام',
+  'dashboard_users.view': 'عرض مستخدمي لوحة التحكم',
+  'dashboard_users.manage': 'إدارة مستخدمي لوحة التحكم',
+  'roles.assign': 'تعيين الأدوار',
+  'audit.view': 'عرض سجل التدقيق',
+  'monitoring.view': 'عرض المراقبة التقنية',
+  'search.view': 'البحث الإداري',
+};
+
+function hasPermission(user: SessionAdminUser | null, permission: string) {
+  if (!user) return false;
+  if (user.isSuperAdmin) return true;
+  return Array.isArray(user.dashboardPermissions) && user.dashboardPermissions.includes(permission);
+}
+
+function canAccessPanel(user: SessionAdminUser | null, panelKey: string) {
+  const item = NAV_ITEMS.flatMap(group => group.items).find(candidate => candidate.key === panelKey);
+  if (!item) return false;
+  return item.permissions.some(permission => hasPermission(user, permission));
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -340,9 +422,9 @@ function downloadCSV<T>(filename: string, headers: string[], rows: T[], rowMappe
 
 // ── HomeCmsPage wrapper (needs ToastProvider context) ────────────────────────
 
-function HomeCmsPageWrapper({ token, apiBase }: { token: string; apiBase: string }) {
+function HomeCmsPageWrapper({ token, apiBase, canManageContent }: { token: string; apiBase: string; canManageContent: boolean }) {
   const addToast = useToast();
-  return <HomeCmsPage token={token} apiBase={apiBase} onToast={addToast} />;
+  return <HomeCmsPage token={token} apiBase={apiBase} onToast={addToast} canManageContent={canManageContent} />;
 }
 
 // ── Shared admin polish components (Phase 1) ──────────────────────────────────
@@ -793,6 +875,7 @@ export default function AdminClient() {
   const [ordersSortKey, setOrdersSortKey] = useState<string>('createdAt');
   const [ordersSortDir, setOrdersSortDir] = useState<'asc' | 'desc'>('desc');
   const [token, setToken] = useState('');
+  const [sessionUser, setSessionUser] = useState<SessionAdminUser | null>(null);
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [overview, setOverview] = useState<Overview>({ merchants: 0, products: 0, orders: 0, sales: 0, commission: 0 });
@@ -882,7 +965,11 @@ export default function AdminClient() {
     reasonType: 'COMPENSATION' as WalletManualCreditReason,
     adminNote: '',
   });
-  const [activePanel, setActivePanel] = useState('overview');
+  const [activePanel, setActivePanel] = useState(() => {
+    if (typeof window === 'undefined') return 'overview';
+    const raw = new URLSearchParams(window.location.search).get('panel');
+    return raw || 'overview';
+  });
   const [message, setMessage] = useState('');
   const pageSize = 10;
   const filteredWalletTransactions = walletTransactions.filter((tx) => {
@@ -964,9 +1051,11 @@ export default function AdminClient() {
   const [notifHistory, setNotifHistory] = useState<{ id: string; title: string; message?: string; body?: string; createdAt?: string; sentAt?: string; audience?: string; targetType?: string }[]>([]);
 
   // ── Security state ────────────────────────────────────────────────────────────
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employees, setEmployees] = useState<DashboardUser[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [empForm, setEmpForm] = useState({ name: '', phone: '', password: '', permissions: [] as string[] });
+  const [dashboardRoles, setDashboardRoles] = useState<DashboardRole[]>([]);
+  const [dashboardPermissions, setDashboardPermissions] = useState<DashboardPermission[]>([]);
+  const [empForm, setEmpForm] = useState({ name: '', phone: '', username: '', password: '', roleKey: 'ADMIN' as DashboardRoleKey });
   const [secLoading, setSecLoading] = useState(false);
   const [secMessage, setSecMessage] = useState('');
 
@@ -974,6 +1063,17 @@ export default function AdminClient() {
   const prevOrderCount = useRef(0);
 
   const authorized = useMemo(() => token.length > 0, [token]);
+  const visibleNavGroups = useMemo(() => (
+    NAV_ITEMS
+      .map(group => ({
+        ...group,
+        items: group.items.filter(item => item.permissions.some(permission => hasPermission(sessionUser, permission))),
+      }))
+      .filter(group => group.items.length > 0)
+  ), [sessionUser]);
+  const activePanelAllowed = useMemo(() => (
+    visibleNavGroups.some(group => group.items.some(item => item.key === activePanel))
+  ), [visibleNavGroups, activePanel]);
   const totalPages = Math.max(1, Math.ceil(orderTotal / PAGE_SIZE));
 
   // ── Dark mode ─────────────────────────────────────────────────────────────────
@@ -989,11 +1089,13 @@ export default function AdminClient() {
 
   useEffect(() => {
     if (!authorized) return;
-    loadSupportWhatsapp();
-    loadShippingZones();
-    loadMinimumOrder();
-    loadPromoCard();
-  }, [authorized]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (hasPermission(sessionUser, 'settings.manage')) {
+      loadSupportWhatsapp();
+      loadShippingZones();
+      loadMinimumOrder();
+      loadPromoCard();
+    }
+  }, [authorized, sessionUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cmd/Ctrl+K to open Global Search
   useEffect(() => {
@@ -1037,7 +1139,21 @@ export default function AdminClient() {
 
   useEffect(() => {
     if (authorized) refreshAll();
-  }, [authorized]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authorized, sessionUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!authorized) return;
+    if (activePanelAllowed) return;
+    const fallback = visibleNavGroups.flatMap(group => group.items)[0]?.key ?? 'overview';
+    setActivePanel(fallback);
+  }, [authorized, activePanelAllowed, visibleNavGroups, activePanel]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('panel', activePanel);
+    window.history.replaceState({}, '', url.toString());
+  }, [activePanel]);
 
   // ── Panel data loading ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1049,17 +1165,17 @@ export default function AdminClient() {
     } else {
       if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
     }
-    if (activePanel === 'home_cms') loadCmsData();
-    if (activePanel === 'overview') loadAnalytics();
-    if (activePanel === 'users') loadUsers();
-    if (activePanel === 'notifications') loadNotifHistory();
-    if (activePanel === 'security') loadSecurity();
-    if (activePanel === 'wallet_recharge_requests') loadWalletRechargeRequests();
-    if (activePanel === 'wallet_manual_credit') loadUsers();
-    if (activePanel === 'wallet_transactions') loadUsers();
-    if (activePanel === 'activity') loadActivityLog(1);
+    if (activePanel === 'home_cms' && hasPermission(sessionUser, 'content.manage')) loadCmsData();
+    if (activePanel === 'overview' && hasPermission(sessionUser, 'overview.view')) loadAnalytics();
+    if (activePanel === 'users' && hasPermission(sessionUser, 'customers.view')) loadUsers();
+    if (activePanel === 'notifications' && hasPermission(sessionUser, 'notifications.manage')) loadNotifHistory();
+    if (activePanel === 'security' && hasPermission(sessionUser, 'dashboard_users.view')) loadSecurity();
+    if (activePanel === 'wallet_recharge_requests' && hasPermission(sessionUser, 'wallet.view')) loadWalletRechargeRequests();
+    if (activePanel === 'wallet_manual_credit' && hasPermission(sessionUser, 'wallet.manual_adjust.manage')) loadUsers();
+    if (activePanel === 'wallet_transactions' && hasPermission(sessionUser, 'wallet.view')) loadUsers();
+    if (activePanel === 'activity' && hasPermission(sessionUser, 'audit.view')) loadActivityLog(1);
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
-  }, [authorized, activePanel]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authorized, activePanel, sessionUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (authorized && activePanel === 'orders') fetchOrders();
@@ -1086,6 +1202,20 @@ export default function AdminClient() {
     return res.json();
   }
 
+  async function logoutAdmin() {
+    try {
+      await api('/auth/logout', { method: 'POST' });
+    } catch {
+    } finally {
+      setToken('');
+      setAdminToken('');
+      setSessionUser(null);
+      setIdentifier('');
+      setPassword('');
+      setMessage('تم تسجيل الخروج');
+    }
+  }
+
   async function login() {
     try {
       const res = await fetch(`${apiUrl}/auth/admin/login`, {
@@ -1097,27 +1227,48 @@ export default function AdminClient() {
       const data = await res.json();
       setToken(data.token);
       setAdminToken(data.token);
+      setSessionUser(data.user ?? null);
       setMessage('تم تسجيل الدخول بنجاح');
     } catch { setMessage('خطأ في الاتصال بالخادم'); }
   }
 
   async function refreshAll() {
     try {
-      const [ov, mer, prod, com, set, cats] = await Promise.all([
-        api<Overview>('/admin/overview'),
-        api<Merchant[]>('/admin/merchants'),
-        api<Product[]>('/admin/products'),
-        api<Commission[]>('/admin/commissions'),
-        api<{ percentage: number }>('/admin/settings/commission'),
-        api<{ id: string; name: string }[]>('/admin/categories'),
-      ]);
-      setOverview(ov);
-      setMerchants(mer);
-      setProducts(prod);
-      setCommissions(com);
-      setCommissionPercentage(String(set.percentage));
-      setCommissionSaved(String(set.percentage));
-      setCategories(cats ?? []);
+      const tasks: Promise<void>[] = [];
+      if (hasPermission(sessionUser, 'overview.view')) {
+        tasks.push(
+          api<Overview>('/admin/overview').then((ov) => setOverview(ov))
+        );
+      }
+      if (hasPermission(sessionUser, 'stores.view')) {
+        tasks.push(
+          api<Merchant[]>('/admin/merchants').then((mer) => setMerchants(mer))
+        );
+      }
+      if (hasPermission(sessionUser, 'products.view')) {
+        tasks.push(
+          api<Product[]>('/admin/products').then((prod) => setProducts(prod))
+        );
+      }
+      if (hasPermission(sessionUser, 'finance.reports.view')) {
+        tasks.push(
+          api<Commission[]>('/admin/commissions').then((com) => setCommissions(com))
+        );
+      }
+      if (hasPermission(sessionUser, 'settings.manage')) {
+        tasks.push(
+          api<{ percentage: number }>('/admin/settings/commission').then((set) => {
+            setCommissionPercentage(String(set.percentage));
+            setCommissionSaved(String(set.percentage));
+          })
+        );
+      }
+      if (hasPermission(sessionUser, 'content.manage') || hasPermission(sessionUser, 'orders.view')) {
+        tasks.push(
+          api<{ id: string; name: string }[]>('/admin/categories').then((cats) => setCategories(cats ?? []))
+        );
+      }
+      await Promise.all(tasks);
     } catch { setMessage('خطأ في تحميل البيانات — تحقق من الاتصال'); }
     finally { setOverviewLoading(false); }
   }
@@ -1434,6 +1585,34 @@ export default function AdminClient() {
       fetchOrderStats();
     } catch (err) { setMessage(String(err)); }
     finally { setOrderStatusUpdating(false); }
+  }
+
+  async function saveSupportNotes(orderId: string, currentNotes: string | undefined) {
+    const supportNotes = window.prompt('أدخل ملاحظة الدعم', currentNotes ?? '')?.trim();
+    if (!supportNotes) return;
+    try {
+      await api(`/admin/orders/${orderId}/support-notes`, {
+        method: 'PATCH',
+        body: JSON.stringify({ supportNotes }),
+      });
+      setSelectedOrder(prev => prev ? { ...prev, supportNotes } : prev);
+      setFullOrders(prev => prev.map(order => order.id === orderId ? { ...order, supportNotes } : order));
+      toast.success('تم حفظ ملاحظة الدعم');
+    } catch (e) {
+      toast.error('فشل حفظ ملاحظة الدعم: ' + String(e));
+    }
+  }
+
+  async function refundOrder(orderId: string) {
+    if (!window.confirm('تأكيد تسجيل المرتجع لهذا الطلب؟')) return;
+    try {
+      await api(`/admin/orders/${orderId}/refund`, { method: 'PATCH' });
+      setSelectedOrder(prev => prev ? { ...prev, paymentStatus: 'REFUNDED' } : prev);
+      setFullOrders(prev => prev.map(order => order.id === orderId ? { ...order, paymentStatus: 'REFUNDED' } : order));
+      toast.success('تم تسجيل المرتجع');
+    } catch (e) {
+      toast.error('فشل تسجيل المرتجع: ' + String(e));
+    }
   }
 
   async function saveCommission() {
@@ -1947,24 +2126,85 @@ export default function AdminClient() {
   async function loadSecurity() {
     setSecLoading(true);
     try {
-      const [emps, acts] = await Promise.allSettled([
-        api<Employee[]>('/admin/employees'),
+      const [emps, acts, rolesData] = await Promise.allSettled([
+        api<DashboardUser[]>('/admin/dashboard-users'),
         api<Activity[]>('/admin/activities'),
+        api<{ roles: DashboardRole[]; permissions: DashboardPermission[] }>('/admin/roles'),
       ]);
       setEmployees(emps.status === 'fulfilled' && Array.isArray(emps.value) ? emps.value : []);
       setActivities(acts.status === 'fulfilled' && Array.isArray(acts.value) ? acts.value : []);
+      if (rolesData.status === 'fulfilled') {
+        setDashboardRoles(Array.isArray(rolesData.value.roles) ? rolesData.value.roles : []);
+        setDashboardPermissions(Array.isArray(rolesData.value.permissions) ? rolesData.value.permissions : []);
+      }
     } catch { /* silent */ }
     finally { setSecLoading(false); }
   }
 
   async function addEmployee() {
-    if (!empForm.name || !empForm.phone || !empForm.password) { setSecMessage('جميع الحقول مطلوبة'); return; }
+    if (!empForm.name || !empForm.username || !empForm.password) { setSecMessage('الاسم واسم المستخدم وكلمة المرور مطلوبة'); return; }
     try {
-      await api('/admin/employees', { method: 'POST', body: JSON.stringify(empForm) });
-      setSecMessage('تم إضافة الموظف بنجاح');
-      setEmpForm({ name: '', phone: '', password: '', permissions: [] });
+      await api('/admin/dashboard-users', { method: 'POST', body: JSON.stringify(empForm) });
+      setSecMessage('تم إضافة مستخدم لوحة التحكم بنجاح');
+      setEmpForm({ name: '', phone: '', username: '', password: '', roleKey: 'ADMIN' });
       loadSecurity();
     } catch (e) { setSecMessage(String(e)); }
+  }
+
+  async function updateDashboardUserRole(userId: string, roleKey: DashboardRoleKey) {
+    try {
+      await api(`/admin/dashboard-users/${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ roleKey }),
+      });
+      setSecMessage('تم تحديث الدور بنجاح');
+      await loadSecurity();
+    } catch (e) {
+      setSecMessage(String(e));
+    }
+  }
+
+  async function toggleDashboardUserStatus(user: DashboardUser) {
+    const nextStatus = user.dashboardStatus === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
+    if (!window.confirm(`تأكيد ${nextStatus === 'ACTIVE' ? 'تفعيل' : 'تعطيل'} المستخدم؟`)) return;
+    try {
+      await api(`/admin/dashboard-users/${user.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      setSecMessage('تم تحديث حالة المستخدم');
+      await loadSecurity();
+    } catch (e) {
+      setSecMessage(String(e));
+    }
+  }
+
+  async function resetDashboardUserPassword(user: DashboardUser) {
+    const password = window.prompt(`أدخل كلمة مرور جديدة للمستخدم ${user.username || user.name || user.id}`);
+    if (!password || password.trim().length < 6) {
+      setSecMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل');
+      return;
+    }
+    try {
+      await api(`/admin/dashboard-users/${user.id}/password`, {
+        method: 'PATCH',
+        body: JSON.stringify({ password: password.trim() }),
+      });
+      setSecMessage('تم إعادة تعيين كلمة المرور');
+    } catch (e) {
+      setSecMessage(String(e));
+    }
+  }
+
+  async function deleteDashboardUser(user: DashboardUser) {
+    if (!window.confirm(`حذف المستخدم ${user.username || user.name || user.id} نهائياً؟`)) return;
+    try {
+      await api(`/admin/dashboard-users/${user.id}`, { method: 'DELETE' });
+      setSecMessage('تم حذف المستخدم');
+      await loadSecurity();
+    } catch (e) {
+      setSecMessage(String(e));
+    }
   }
 
   // ── CMS ───────────────────────────────────────────────────────────────────────
@@ -2182,7 +2422,7 @@ export default function AdminClient() {
   }
 
   // ── Dashboard shell ───────────────────────────────────────────────────────────
-  const activeLabel = NAV_ITEMS.flatMap(g => g.items).find(i => i.key === activePanel);
+          const activeLabel = visibleNavGroups.flatMap(g => g.items).find(i => i.key === activePanel);
 
   return (
     <div className="dash-shell" dir="rtl">
@@ -2203,7 +2443,7 @@ export default function AdminClient() {
         </div>
 
         <nav className="sb-nav">
-          {NAV_ITEMS.map(group => (
+          {visibleNavGroups.map(group => (
             <div key={group.group}>
               {!sidebarCollapsed && <div className="sb-group-label sb-section-label">{group.group}</div>}
               {group.items.map(item => (
@@ -2256,6 +2496,14 @@ export default function AdminClient() {
             </span>
           </div>
           <div className="topbar-actions">
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginInlineStart: 8 }}>
+              <span style={{ fontFamily: 'Cairo', fontWeight: 800, color: 'var(--brown)', fontSize: 13 }}>
+                {sessionUser?.name || sessionUser?.username || 'مشرف'}
+              </span>
+              <span style={{ fontFamily: 'Cairo', color: 'var(--muted)', fontSize: 11 }}>
+                {sessionUser?.dashboardRoles?.[0]?.name || 'لوحة التحكم'}
+              </span>
+            </div>
             <button className="topbar-btn" onClick={() => { setGlobalSearchOpen(true); setGlobalSearchQuery(''); }} title="Ctrl/Cmd + K">
               🔍 بحث شامل
             </button>
@@ -2263,6 +2511,7 @@ export default function AdminClient() {
               {darkMode ? '☀️ فاتح' : '🌙 داكن'}
             </button>
             <button className="topbar-btn" onClick={refreshAll}>🔄 تحديث</button>
+            <button className="topbar-btn" onClick={logoutAdmin}>🚪 خروج</button>
           </div>
         </div>
 
@@ -2301,7 +2550,7 @@ export default function AdminClient() {
                   <p className="exec-hero-sub">إليك نظرة سريعة على أداء المنصة اليوم</p>
                 </div>
                 <div className="exec-hero-actions">
-                  <button className="exec-btn-primary" onClick={() => setActivePanel('orders')}>
+                  <button className="exec-btn-primary" onClick={() => canAccessPanel(sessionUser, 'orders') && setActivePanel('orders')}>
                     📦 إدارة الطلبات
                   </button>
                   <button className="exec-btn-ghost" onClick={() => { refreshAll(); loadAnalytics(); }}>
@@ -2340,42 +2589,42 @@ export default function AdminClient() {
                   <h3>⚡ إجراءات سريعة</h3>
                 </div>
                 <div className="exec-quick-grid">
-                  <button className="exec-quick-btn" onClick={() => setActivePanel('orders')}>
+                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'orders') && setActivePanel('orders')}>
                     <span className="qa-icon">📦</span>
                     <div>
                       <strong>الطلبات</strong>
                       <span>{orderStats.pending} في الانتظار</span>
                     </div>
                   </button>
-                  <button className="exec-quick-btn" onClick={() => setActivePanel('merchants')}>
+                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'merchants') && setActivePanel('merchants')}>
                     <span className="qa-icon">🏪</span>
                     <div>
                       <strong>التجار</strong>
                       <span>إدارة المتاجر</span>
                     </div>
                   </button>
-                  <button className="exec-quick-btn" onClick={() => setActivePanel('products')}>
+                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'products') && setActivePanel('products')}>
                     <span className="qa-icon">🛒</span>
                     <div>
                       <strong>المنتجات</strong>
                       <span>{overview.products} منتج</span>
                     </div>
                   </button>
-                  <button className="exec-quick-btn" onClick={() => setActivePanel('shipping')}>
+                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'shipping') && setActivePanel('shipping')}>
                     <span className="qa-icon">🚚</span>
                     <div>
                       <strong>رسوم الشحن</strong>
                       <span>إدارة المحافظات</span>
                     </div>
                   </button>
-                  <button className="exec-quick-btn" onClick={() => setActivePanel('financial')}>
+                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'financial') && setActivePanel('financial')}>
                     <span className="qa-icon">💰</span>
                     <div>
                       <strong>المالية</strong>
                       <span>العمولات والإعدادات</span>
                     </div>
                   </button>
-                  <button className="exec-quick-btn" onClick={() => setActivePanel('notifications')}>
+                  <button className="exec-quick-btn" onClick={() => canAccessPanel(sessionUser, 'notifications') && setActivePanel('notifications')}>
                     <span className="qa-icon">🔔</span>
                     <div>
                       <strong>الإشعارات</strong>
@@ -2390,7 +2639,7 @@ export default function AdminClient() {
                 <div className="exec-list-card">
                   <div className="exec-section-head">
                     <h3>🏆 أعلى المتاجر</h3>
-                    <button className="exec-link" onClick={() => setActivePanel('merchants')}>عرض الكل ←</button>
+                    <button className="exec-link" onClick={() => canAccessPanel(sessionUser, 'merchants') && setActivePanel('merchants')}>عرض الكل ←</button>
                   </div>
                   {topVendors.length === 0 ? (
                     <div className="exec-empty">لا توجد بيانات بعد</div>
@@ -2413,7 +2662,7 @@ export default function AdminClient() {
                 <div className="exec-list-card">
                   <div className="exec-section-head">
                     <h3>⭐ أعلى المنتجات</h3>
-                    <button className="exec-link" onClick={() => setActivePanel('products')}>عرض الكل ←</button>
+                    <button className="exec-link" onClick={() => canAccessPanel(sessionUser, 'products') && setActivePanel('products')}>عرض الكل ←</button>
                   </div>
                   {topProducts.length === 0 ? (
                     <div className="exec-empty">لا توجد بيانات بعد</div>
@@ -2436,7 +2685,7 @@ export default function AdminClient() {
                 <div className="exec-list-card">
                   <div className="exec-section-head">
                     <h3>📋 آخر النشاط</h3>
-                    <button className="exec-link" onClick={() => setActivePanel('activity')}>عرض الكل ←</button>
+                    <button className="exec-link" onClick={() => canAccessPanel(sessionUser, 'activity') && setActivePanel('activity')}>عرض الكل ←</button>
                   </div>
                   {activityLog.length === 0 ? (
                     <button className="exec-empty exec-empty-clickable" onClick={() => loadActivityLog(1)}>
@@ -4028,7 +4277,7 @@ export default function AdminClient() {
           {activePanel === 'home_cms' && (
             <section className="panel" style={{ overflow: 'visible', borderRadius: 30 }}>
               <ToastProvider>
-                <HomeCmsPageWrapper token={token!} apiBase={apiUrl} />
+                <HomeCmsPageWrapper token={token!} apiBase={apiUrl} canManageContent={hasPermission(sessionUser, 'content.manage')} />
               </ToastProvider>
               {false && <>
 
@@ -5394,7 +5643,7 @@ export default function AdminClient() {
               <div className="pg-header">
                 <div>
                   <h2 className="pg-title">الصلاحيات والأمان</h2>
-                  <p className="pg-subtitle">إدارة الموظفين وصلاحياتهم وسجل النشاط</p>
+                  <p className="pg-subtitle">إدارة مستخدمي لوحة التحكم والأدوار وسجل النشاط</p>
                 </div>
               </div>
 
@@ -5406,12 +5655,13 @@ export default function AdminClient() {
               )}
 
               <div className="two-col">
-                {/* Add employee form */}
+                {/* Add dashboard user form */}
                 <div className="chart-panel">
-                  <h3 className="chart-panel-title">➕ إضافة موظف جديد</h3>
+                  <h3 className="chart-panel-title">➕ إضافة مستخدم لوحة تحكم</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
                     {[
                       { label: 'الاسم', key: 'name' as const, placeholder: 'اسم الموظف', type: 'text' },
+                      { label: 'اسم المستخدم', key: 'username' as const, placeholder: 'admin_user', type: 'text' },
                       { label: 'الهاتف', key: 'phone' as const, placeholder: '+20XXXXXXXXXX', type: 'tel' },
                       { label: 'كلمة المرور', key: 'password' as const, placeholder: '••••••••', type: 'password' },
                     ].map(f => (
@@ -5422,32 +5672,78 @@ export default function AdminClient() {
                           style={{ width: '100%', padding: '9px 13px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)' }} />
                       </div>
                     ))}
+                    <div>
+                      <label style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>الدور</label>
+                      <select
+                        value={empForm.roleKey}
+                        onChange={e => setEmpForm(prev => ({ ...prev, roleKey: e.target.value as DashboardRoleKey }))}
+                        style={{ width: '100%', padding: '9px 13px', borderRadius: 10, border: '1px solid rgba(71,39,21,0.15)', fontFamily: 'Cairo', fontSize: 13, background: 'var(--paper)', color: 'var(--brown)' }}
+                      >
+                        {dashboardRoles.map(role => (
+                          <option key={role.key} value={role.key}>{role.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <button className="action-btn" onClick={addEmployee} style={{ background: 'var(--brown)', color: 'var(--cream)', border: 'none', marginTop: 6 }}>
-                      💾 إضافة الموظف
+                      💾 إضافة المستخدم
                     </button>
                   </div>
                 </div>
 
-                {/* Employees list */}
+                {/* Dashboard users list */}
                 <div className="list-panel" style={{ margin: 0 }}>
-                  <div className="lp-head"><h3>👥 الموظفون</h3></div>
+                  <div className="lp-head"><h3>👥 مستخدمو لوحة التحكم</h3></div>
                   <div className="lp-body">
                     {secLoading ? (
                       <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>جاري التحميل…</div>
                     ) : !Array.isArray(employees) || employees.length === 0 ? (
-                      <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>لا يوجد موظفون</div>
+                      <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontFamily: 'Cairo' }}>لا يوجد مستخدمون</div>
                     ) : employees.map(emp => (
                       <div className="emp-row" key={emp.id}>
                         <div className="emp-avatar">{(emp.name ?? '?').charAt(0)}</div>
                         <div className="lp-info">
-                          <strong>{emp.name}</strong>
-                          <div className="lp-sub" dir="ltr">{emp.phone}</div>
-                          {Array.isArray(emp.permissions) && emp.permissions.length > 0 && (
+                          <strong>{emp.name || emp.username || '—'}</strong>
+                          <div className="lp-sub" dir="ltr">{emp.username || '—'} {emp.phone ? `• ${emp.phone}` : ''}</div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                            <span className="sec-badge building" style={{ fontSize: 10 }}>
+                              {emp.primaryRoleName || ROLE_LABELS[emp.primaryRoleKey as DashboardRoleKey] || '—'}
+                            </span>
+                            <span className="sec-badge building" style={{ fontSize: 10, background: emp.dashboardStatus === 'ACTIVE' ? '#dcfce7' : '#fee2e2', color: emp.dashboardStatus === 'ACTIVE' ? '#166534' : '#991b1b' }}>
+                              {emp.dashboardStatus === 'ACTIVE' ? 'نشط' : 'معطل'}
+                            </span>
+                          </div>
+                          {Array.isArray(emp.dashboardPermissions) && emp.dashboardPermissions.length > 0 && (
                             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-                              {emp.permissions.map((p, pi) => {
-                                const label = typeof p === 'string' ? p : JSON.stringify(p);
+                              {emp.dashboardPermissions.slice(0, 6).map((p, pi) => {
+                                const label = PERMISSION_LABELS[p] || p;
                                 return <span key={pi} className="sec-badge building" style={{ fontSize: 9 }}>{label}</span>;
                               })}
+                              {emp.dashboardPermissions.length > 6 && (
+                                <span className="sec-badge building" style={{ fontSize: 9 }}>+{emp.dashboardPermissions.length - 6}</span>
+                              )}
+                            </div>
+                          )}
+                          {emp.lastLoginAt && (
+                            <div className="lp-sub" style={{ marginTop: 4 }}>آخر دخول: {formatDate(emp.lastLoginAt)}</div>
+                          )}
+                          {hasPermission(sessionUser, 'dashboard_users.manage') && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                              <select
+                                value={emp.primaryRoleKey || 'ADMIN'}
+                                onChange={e => updateDashboardUserRole(emp.id, e.target.value as DashboardRoleKey)}
+                                style={{ padding: '6px 10px', borderRadius: 8, fontFamily: 'Cairo', border: '1px solid rgba(71,39,21,0.15)' }}
+                              >
+                                {dashboardRoles.map(role => (
+                                  <option key={role.key} value={role.key}>{role.name}</option>
+                                ))}
+                              </select>
+                              <button className="admin-row-btn" onClick={() => toggleDashboardUserStatus(emp)}>
+                                {emp.dashboardStatus === 'ACTIVE' ? '🔒 تعطيل' : '🔓 تفعيل'}
+                              </button>
+                              <button className="admin-row-btn" onClick={() => resetDashboardUserPassword(emp)}>🔑 إعادة كلمة المرور</button>
+                              {!emp.isSuperAdmin && (
+                                <button className="admin-row-btn danger" onClick={() => deleteDashboardUser(emp)}>🗑️ حذف</button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -5455,6 +5751,30 @@ export default function AdminClient() {
                       </div>
                     ))}
                   </div>
+                </div>
+              </div>
+
+              <div className="chart-panel" style={{ marginTop: 18 }}>
+                <h3 className="chart-panel-title">🧩 الأدوار الافتراضية</h3>
+                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+                  {dashboardRoles.map(role => (
+                    <div key={role.key} style={{ border: '1px solid rgba(71,39,21,0.12)', borderRadius: 14, padding: 14, background: 'var(--paper)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontFamily: 'Cairo', fontWeight: 800, color: 'var(--brown)' }}>{role.name}</div>
+                          <div style={{ fontFamily: 'Cairo', fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{role.description}</div>
+                        </div>
+                        <span className="sec-badge building">{role.permissions.length} صلاحية</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                        {role.permissions.map(permission => (
+                          <span key={permission} className="sec-badge building" style={{ fontSize: 10 }}>
+                            {PERMISSION_LABELS[permission] || permission}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -5627,7 +5947,7 @@ export default function AdminClient() {
                 </span>
                 <select
                   value={selectedOrder.status}
-                  disabled={orderStatusUpdating}
+                  disabled={orderStatusUpdating || !hasPermission(sessionUser, 'orders.update_status')}
                   onChange={e => {
                     const newStatus = e.target.value;
                     if (!window.confirm(`تأكيد تغيير الحالة إلى "${ORDER_STATUS_AR[newStatus] ?? newStatus}"؟`)) return;
@@ -5636,6 +5956,16 @@ export default function AdminClient() {
                   style={{ fontSize: 12, padding: '6px 10px', minWidth: 130, borderRadius: 10, opacity: orderStatusUpdating ? 0.6 : 1, cursor: orderStatusUpdating ? 'wait' : 'pointer' }}>
                   {ORDER_STATUSES.map(s => <option key={s} value={s}>{ORDER_STATUS_AR[s] ?? s}</option>)}
                 </select>
+                {hasPermission(sessionUser, 'support_notes.manage') && (
+                  <button className="topbar-btn" onClick={() => saveSupportNotes(selectedOrder.id, selectedOrder.supportNotes)}>
+                    📝 ملاحظة دعم
+                  </button>
+                )}
+                {hasPermission(sessionUser, 'refunds.manage') && selectedOrder.paymentStatus !== 'REFUNDED' && (
+                  <button className="topbar-btn" onClick={() => refundOrder(selectedOrder.id)}>
+                    💸 مرتجع
+                  </button>
+                )}
                 <button className="close-btn" onClick={() => setSelectedOrder(null)}>✕</button>
               </div>
             </div>
@@ -5665,6 +5995,7 @@ export default function AdminClient() {
                   <div className="modal-field"><label>حالة الدفع</label><p>{selectedOrder.paymentStatus}</p></div>
                   <div className="modal-field"><label>تاريخ الطلب</label><p dir="ltr">{formatDate(selectedOrder.createdAt)}</p></div>
                   <div className="modal-field"><label>آخر تحديث</label><p dir="ltr">{formatDate(selectedOrder.updatedAt)}</p></div>
+                  {selectedOrder.supportNotes && <div className="modal-field full-width"><label>ملاحظات الدعم</label><p>{selectedOrder.supportNotes}</p></div>}
                 </div>
               </div>
               <div className="modal-section">

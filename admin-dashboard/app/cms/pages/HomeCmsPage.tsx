@@ -35,11 +35,12 @@ interface HomeCmsPanelProps {
   token: string;
   apiBase: string;
   onToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  canManageContent?: boolean;
 }
 
 type Tab = 'banners' | 'categories' | 'stores';
 
-export function HomeCmsPage({ token, apiBase, onToast }: HomeCmsPanelProps) {
+export function HomeCmsPage({ token, apiBase, onToast, canManageContent = true }: HomeCmsPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('banners');
   const [addingBanner, setAddingBanner] = useState(false);
   const [addingCategory, setAddingCategory] = useState(false);
@@ -94,6 +95,14 @@ export function HomeCmsPage({ token, apiBase, onToast }: HomeCmsPanelProps) {
   });
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  if (!canManageContent) {
+    return (
+      <div dir="rtl" style={{ background: 'var(--card)', borderRadius: 16, border: '1px solid rgba(71,39,21,0.12)', padding: 24, fontFamily: 'Cairo', color: 'var(--brown)' }}>
+        ليس لديك صلاحية الوصول إلى إدارة المحتوى.
+      </div>
+    );
+  }
 
   return (
     <div dir="rtl" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
