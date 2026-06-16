@@ -27,6 +27,14 @@ type OrdersDayPoint = { date: string; orderCount: number; revenue: number };
 type StatusCount = { status: string; count: number };
 type GovernorateStat = { governorate: string; orderCount: number; totalRevenue: number };
 
+type UserStats = {
+  totalCustomers: number;
+  activeCustomers: number;
+  inactiveCustomers: number;
+  newCustomersToday: number;
+  newCustomersThisWeek: number;
+};
+
 type Merchant = {
   id: string;
   storeName: string;
@@ -1055,6 +1063,9 @@ export default function AdminClient() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [userSearch, setUserSearch] = useState('');
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [userStatsLoading, setUserStatsLoading] = useState(false);
+  const [userStatsError, setUserStatsError] = useState('');
 
   // ── Notifications state ───────────────────────────────────────────────────────
   const [notifTitle, setNotifTitle] = useState('');
@@ -1210,7 +1221,7 @@ export default function AdminClient() {
     }
     if (activePanel === 'home_cms' && hasPermission(sessionUser, 'content.manage')) loadCmsData();
     if (activePanel === 'overview' && hasPermission(sessionUser, 'overview.view')) loadAnalytics();
-    if (activePanel === 'users' && hasPermission(sessionUser, 'customers.view')) loadUsers();
+    if (activePanel === 'users' && hasPermission(sessionUser, 'customers.view')) { loadUsers(); loadUserStats(); }
     if (activePanel === 'notifications' && hasPermission(sessionUser, 'notifications.manage')) loadNotifHistory();
     if (activePanel === 'security' && hasPermission(sessionUser, 'dashboard_users.view')) loadSecurity();
     if (activePanel === 'wallet_recharge_requests' && hasPermission(sessionUser, 'wallet.view')) loadWalletRechargeRequests();
@@ -2118,6 +2129,19 @@ export default function AdminClient() {
       setUsers(list);
     } catch { /* silent */ }
     finally { setUsersLoading(false); }
+  }
+
+  async function loadUserStats() {
+    setUserStatsLoading(true);
+    setUserStatsError('');
+    try {
+      const stats = await api<UserStats>('/admin/users/stats');
+      setUserStats(stats);
+    } catch {
+      setUserStatsError('فشل تحميل إحصائيات العملاء — تحقق من الاتصال بالخادم');
+    } finally {
+      setUserStatsLoading(false);
+    }
   }
 
   // ── Notifications ─────────────────────────────────────────────────────────────
@@ -4293,21 +4317,46 @@ export default function AdminClient() {
               </div>
 
               {/* Quick stats */}
-              <div className="analytics-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 16 }}>
+              {userStatsError && (
+                <div style={{ background: '#fee2e2', color: '#991b1b', padding: '10px 14px', borderRadius: 10, marginBottom: 12, fontFamily: 'Cairo', fontSize: 13 }}>
+                  ⚠️ {userStatsError}
+                </div>
+              )}
+              <div className="analytics-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', marginBottom: 16 }}>
                 <div className="an-card blue">
                   <div className="an-card-icon">👥</div>
                   <div className="an-card-label">إجمالي العملاء</div>
-                  <div className="an-card-value">{(Array.isArray(users) ? users : []).length}</div>
+                  <div className="an-card-value">
+                    {userStatsLoading ? '…' : (userStats?.totalCustomers ?? 0).toLocaleString('ar-EG')}
+                  </div>
                 </div>
                 <div className="an-card green">
                   <div className="an-card-icon">✅</div>
                   <div className="an-card-label">نشطون</div>
-                  <div className="an-card-value">{(Array.isArray(users) ? users : []).filter(u => !u.isBanned).length}</div>
+                  <div className="an-card-value">
+                    {userStatsLoading ? '…' : (userStats?.activeCustomers ?? 0).toLocaleString('ar-EG')}
+                  </div>
                 </div>
                 <div className="an-card orange">
                   <div className="an-card-icon">🚫</div>
-                  <div className="an-card-label">محظورون</div>
-                  <div className="an-card-value">{(Array.isArray(users) ? users : []).filter(u => u.isBanned).length}</div>
+                  <div className="an-card-label">غير نشطين</div>
+                  <div className="an-card-value">
+                    {userStatsLoading ? '…' : (userStats?.inactiveCustomers ?? 0).toLocaleString('ar-EG')}
+                  </div>
+                </div>
+                <div className="an-card purple">
+                  <div className="an-card-icon">🌟</div>
+                  <div className="an-card-label">عملاء اليوم</div>
+                  <div className="an-card-value">
+                    {userStatsLoading ? '…' : (userStats?.newCustomersToday ?? 0).toLocaleString('ar-EG')}
+                  </div>
+                </div>
+                <div className="an-card teal">
+                  <div className="an-card-icon">📅</div>
+                  <div className="an-card-label">عملاء هذا الأسبوع</div>
+                  <div className="an-card-value">
+                    {userStatsLoading ? '…' : (userStats?.newCustomersThisWeek ?? 0).toLocaleString('ar-EG')}
+                  </div>
                 </div>
               </div>
 
