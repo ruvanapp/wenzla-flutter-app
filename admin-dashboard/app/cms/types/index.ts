@@ -47,6 +47,26 @@ export interface MerchantSummary {
   status?: string;
 }
 
+export interface ProductSummary {
+  id: string;
+  name: string;
+  price: string;
+  imageUrl?: string;
+  weight?: string;
+  stock?: number;
+  merchant?: { id: string; storeName: string; logoUrl?: string };
+}
+
+export interface FeaturedProduct {
+  id: string;
+  productId: string;
+  customLabel?: string;
+  sortOrder: number;
+  enabled: boolean;
+  product: ProductSummary;
+  createdAt?: string;
+}
+
 // ── Form types ────────────────────────────────────────────────────────────────
 
 export type BannerFormData = Omit<Banner, 'id' | 'createdAt' | 'updatedAt'> & { id?: string };
@@ -122,7 +142,9 @@ export interface CmsState {
   banners: Banner[];
   categories: Category[];
   featuredStores: FeaturedStore[];
+  featuredProducts: FeaturedProduct[];
   merchants: MerchantSummary[];
+  products: ProductSummary[];
   loading: boolean;
   error: string | null;
   uploads: Record<string, UploadProgress>;

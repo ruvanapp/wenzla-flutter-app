@@ -38,7 +38,7 @@ interface HomeCmsPanelProps {
   canManageContent?: boolean;
 }
 
-type Tab = 'banners' | 'categories' | 'stores';
+type Tab = 'banners' | 'categories' | 'stores' | 'products';
 
 export function HomeCmsPage({ token, apiBase, onToast, canManageContent = true }: HomeCmsPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('banners');
@@ -48,7 +48,7 @@ export function HomeCmsPage({ token, apiBase, onToast, canManageContent = true }
   const [newCategoryName, setNewCategoryName] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const { state, loadAll, bannerActions, categoryActions, featuredActions } = useCmsStore({
+  const { state, loadAll, bannerActions, categoryActions, featuredActions, featuredProductActions } = useCmsStore({
     baseUrl: apiBase,
     token,
     onToast,
@@ -59,6 +59,7 @@ export function HomeCmsPage({ token, apiBase, onToast, canManageContent = true }
   const sortedBanners = [...state.banners].sort((a, b) => a.sortOrder - b.sortOrder);
   const sortedCategories = [...state.categories].sort((a, b) => a.sortOrder - b.sortOrder);
   const sortedFeatured = [...state.featuredStores].sort((a, b) => a.sortOrder - b.sortOrder);
+  const sortedFeaturedProducts = [...state.featuredProducts].sort((a, b) => a.sortOrder - b.sortOrder);
 
   const activeBanners = sortedBanners.filter(b => b.enabled).length;
   const activeCategories = sortedCategories.filter(c => c.enabled).length;
@@ -117,6 +118,7 @@ export function HomeCmsPage({ token, apiBase, onToast, canManageContent = true }
             { label: 'التصنيفات', value: state.categories.length, icon: '🏷️', color: '#3b82f6' },
             { label: 'تصنيفات نشطة', value: activeCategories, icon: '📂', color: '#8b5cf6' },
             { label: 'متاجر مميزة', value: state.featuredStores.length, icon: '⭐', color: '#f59e0b' },
+            { label: 'منتجات مميزة', value: state.featuredProducts.length, icon: '🛒', color: '#ec4899' },
           ].map(s => (
             <div key={s.label} style={{ background: 'var(--card)', borderRadius: 14, padding: '14px 16px', border: '1.5px solid var(--border)', textAlign: 'center' }}>
               <div style={{ fontSize: 24, marginBottom: 6 }}>{s.icon}</div>
@@ -131,6 +133,7 @@ export function HomeCmsPage({ token, apiBase, onToast, canManageContent = true }
           <button style={tabStyle(activeTab === 'banners')} onClick={() => setActiveTab('banners')}>🖼️ البنرات ({state.banners.length})</button>
           <button style={tabStyle(activeTab === 'categories')} onClick={() => setActiveTab('categories')}>🏷️ التصنيفات ({state.categories.length})</button>
           <button style={tabStyle(activeTab === 'stores')} onClick={() => setActiveTab('stores')}>⭐ المتاجر المميزة ({state.featuredStores.length})</button>
+          <button style={tabStyle(activeTab === 'products')} onClick={() => setActiveTab('products')}>🛒 المنتجات المميزة ({state.featuredProducts.length})</button>
 
           <div style={{ marginRight: 'auto', display: 'flex', gap: 10 }}>
             {activeTab === 'banners' && (
@@ -324,6 +327,82 @@ export function HomeCmsPage({ token, apiBase, onToast, canManageContent = true }
               <div style={{ textAlign: 'center', padding: 48, background: 'var(--card)', borderRadius: 16, border: '2px dashed var(--border)' }}>
                 <div style={{ fontSize: 48, marginBottom: 12 }}>⭐</div>
                 <div style={{ fontFamily: 'Cairo', fontWeight: 700, color: 'var(--text)' }}>لا توجد متاجر موافق عليها بعد</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── FEATURED PRODUCTS TAB ── */}
+        {activeTab === 'products' && !state.loading && (
+          <div>
+            {sortedFeaturedProducts.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 15, color: 'var(--text)', marginBottom: 12 }}>
+                  المنتجات المميزة الحالية
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+                  {sortedFeaturedProducts.map(fp => (
+                    <div key={fp.id} style={{ background: 'var(--card)', border: '1.5px solid var(--border)', borderRadius: 14, padding: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
+                      {fp.product?.imageUrl ? (
+                        <img src={fp.product.imageUrl} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🍯</div>
+                      )}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>{fp.product?.name ?? 'منتج'}</div>
+                        <div style={{ fontFamily: 'Cairo', fontSize: 11, color: 'var(--text-muted)' }}>
+                          {fp.product?.price ? `${fp.product.price} ج.م` : ''} {fp.product?.merchant?.storeName ? `· ${fp.product.merchant.storeName}` : ''}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                          <button onClick={() => featuredProductActions.toggle(fp.id, !fp.enabled)}
+                            style={{ padding: '3px 8px', borderRadius: 6, border: 'none', cursor: 'pointer', background: fp.enabled ? '#ff444422' : '#22c55e22', color: fp.enabled ? '#ff4444' : '#22c55e', fontFamily: 'Cairo', fontSize: 11 }}>
+                            {fp.enabled ? 'إخفاء' : 'إظهار'}
+                          </button>
+                          <button onClick={() => featuredProductActions.unpin(fp.id)}
+                            style={{ padding: '3px 8px', borderRadius: 6, border: '1.5px solid #ff444444', cursor: 'pointer', background: 'transparent', color: '#ff4444', fontFamily: 'Cairo', fontSize: 11 }}>
+                            إزالة
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {state.products.length > 0 && (
+              <div>
+                <div style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 15, color: 'var(--text)', marginBottom: 12 }}>إضافة منتجات مميزة</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+                  {state.products
+                    .filter(p => !sortedFeaturedProducts.some(fp => fp.productId === p.id))
+                    .map(p => (
+                      <div key={p.id} style={{ background: 'var(--card)', border: '1.5px solid var(--border)', borderRadius: 14, padding: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🍯</div>
+                        )}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontFamily: 'Cairo', fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>{p.name}</div>
+                          <div style={{ fontFamily: 'Cairo', fontSize: 11, color: 'var(--text-muted)' }}>
+                            {p.price ? `${p.price} ج.م` : ''} {p.merchant?.storeName ? `· ${p.merchant.storeName}` : ''}
+                          </div>
+                          <button onClick={() => featuredProductActions.pin(p.id, state.featuredProducts.length + 1)}
+                            style={{ marginTop: 4, padding: '4px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, var(--gold), var(--orange))', color: '#fff', fontFamily: 'Cairo', fontSize: 12, fontWeight: 700 }}>
+                            🛒 تمييز
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {state.products.length === 0 && sortedFeaturedProducts.length === 0 && (
+              <div style={{ textAlign: 'center', padding: 48, background: 'var(--card)', borderRadius: 16, border: '2px dashed var(--border)' }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>🛒</div>
+                <div style={{ fontFamily: 'Cairo', fontWeight: 700, color: 'var(--text)' }}>لا توجد منتجات نشطة بعد</div>
               </div>
             )}
           </div>

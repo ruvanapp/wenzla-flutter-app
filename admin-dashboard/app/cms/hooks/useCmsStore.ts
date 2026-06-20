@@ -35,16 +35,20 @@ export function useCmsStore({ baseUrl, token, onToast }: UseCmsStoreOptions) {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
     try {
-      const [banners, categories, featuredStores, merchants] = await Promise.allSettled([
+      const [banners, categories, featuredStores, merchants, featuredProducts, products] = await Promise.allSettled([
         services.banners.getAll(),
         services.categories.getAll(),
         services.featuredStores.getAll(),
         services.featuredStores.getMerchantsList(),
+        services.featuredProducts.getAll(),
+        services.featuredProducts.getProductsList(),
       ]);
       if (banners.status === 'fulfilled') dispatch({ type: 'SET_BANNERS', payload: banners.value });
       if (categories.status === 'fulfilled') dispatch({ type: 'SET_CATEGORIES', payload: categories.value });
       if (featuredStores.status === 'fulfilled') dispatch({ type: 'SET_FEATURED_STORES', payload: featuredStores.value });
       if (merchants.status === 'fulfilled') dispatch({ type: 'SET_MERCHANTS', payload: merchants.value });
+      if (featuredProducts.status === 'fulfilled') dispatch({ type: 'SET_FEATURED_PRODUCTS', payload: featuredProducts.value });
+      if (products.status === 'fulfilled') dispatch({ type: 'SET_PRODUCTS', payload: products.value });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       dispatch({ type: 'SET_ERROR', payload: msg });
@@ -277,11 +281,55 @@ export function useCmsStore({ baseUrl, token, onToast }: UseCmsStoreOptions) {
     },
   }), [services, toast]);
 
+  // ── Featured product actions ────────────────────────────────────────────────
+
+  const featuredProductActions = useMemo(() => ({
+    async pin(productId: string, sortOrder: number) {
+      try {
+        const created = await services.featuredProducts.pin(productId, sortOrder);
+        dispatch({ type: 'UPSERT_FEATURED_PRODUCT', payload: created });
+        toast('تم تمييز المنتج');
+        return true;
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast(msg || 'فشل تمييز المنتج', 'error');
+        return false;
+      }
+    },
+
+    async unpin(id: string) {
+      try {
+        await services.featuredProducts.unpin(id);
+        dispatch({ type: 'REMOVE_FEATURED_PRODUCT', payload: id });
+        toast('تم إلغاء التمييز', 'info');
+        return true;
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast(msg || 'فشل إلغاء التمييز', 'error');
+        return false;
+      }
+    },
+
+    async toggle(id: string, enabled: boolean) {
+      try {
+        const updated = await services.featuredProducts.toggle(id, enabled);
+        dispatch({ type: 'UPSERT_FEATURED_PRODUCT', payload: updated });
+        toast(enabled ? 'تم إظهار المنتج' : 'تم إخفاء المنتج');
+        return true;
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast(msg || 'فشل تغيير حالة المنتج', 'error');
+        return false;
+      }
+    },
+  }), [services, toast]);
+
   return {
     state,
     loadAll,
     bannerActions,
     categoryActions,
     featuredActions,
+    featuredProductActions,
   };
 }

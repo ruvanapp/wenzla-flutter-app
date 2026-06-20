@@ -3,7 +3,8 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 import type {
-  Banner, Category, FeaturedStore, MerchantSummary,
+  Banner, Category, FeaturedStore, FeaturedProduct,
+  MerchantSummary, ProductSummary,
   UploadProgress, CmsState,
 } from '../types';
 
@@ -15,13 +16,17 @@ export type CmsAction =
   | { type: 'SET_BANNERS'; payload: Banner[] }
   | { type: 'SET_CATEGORIES'; payload: Category[] }
   | { type: 'SET_FEATURED_STORES'; payload: FeaturedStore[] }
+  | { type: 'SET_FEATURED_PRODUCTS'; payload: FeaturedProduct[] }
   | { type: 'SET_MERCHANTS'; payload: MerchantSummary[] }
+  | { type: 'SET_PRODUCTS'; payload: ProductSummary[] }
   | { type: 'UPSERT_BANNER'; payload: Banner }
   | { type: 'REMOVE_BANNER'; payload: string }
   | { type: 'UPSERT_CATEGORY'; payload: Category }
   | { type: 'REMOVE_CATEGORY'; payload: string }
   | { type: 'UPSERT_FEATURED'; payload: FeaturedStore }
   | { type: 'REMOVE_FEATURED'; payload: string }
+  | { type: 'UPSERT_FEATURED_PRODUCT'; payload: FeaturedProduct }
+  | { type: 'REMOVE_FEATURED_PRODUCT'; payload: string }
   | { type: 'SET_UPLOAD'; payload: UploadProgress }
   | { type: 'CLEAR_UPLOAD'; payload: string }
   | { type: 'MARK_SAVED' };
@@ -32,7 +37,9 @@ export const initialCmsState: CmsState = {
   banners: [],
   categories: [],
   featuredStores: [],
+  featuredProducts: [],
   merchants: [],
+  products: [],
   loading: false,
   error: null,
   uploads: {},
@@ -59,8 +66,14 @@ export function cmsReducer(state: CmsState, action: CmsAction): CmsState {
     case 'SET_FEATURED_STORES':
       return { ...state, featuredStores: action.payload };
 
+    case 'SET_FEATURED_PRODUCTS':
+      return { ...state, featuredProducts: action.payload };
+
     case 'SET_MERCHANTS':
       return { ...state, merchants: action.payload };
+
+    case 'SET_PRODUCTS':
+      return { ...state, products: action.payload };
 
     case 'UPSERT_BANNER': {
       const exists = state.banners.find(b => b.id === action.payload.id);
@@ -114,6 +127,24 @@ export function cmsReducer(state: CmsState, action: CmsAction): CmsState {
         ...state,
         isDirty: true,
         featuredStores: state.featuredStores.filter(f => f.id !== action.payload),
+      };
+
+    case 'UPSERT_FEATURED_PRODUCT': {
+      const exists = state.featuredProducts.find(f => f.id === action.payload.id);
+      return {
+        ...state,
+        isDirty: true,
+        featuredProducts: exists
+          ? state.featuredProducts.map(f => f.id === action.payload.id ? action.payload : f)
+          : [...state.featuredProducts, action.payload],
+      };
+    }
+
+    case 'REMOVE_FEATURED_PRODUCT':
+      return {
+        ...state,
+        isDirty: true,
+        featuredProducts: state.featuredProducts.filter(f => f.id !== action.payload),
       };
 
     case 'SET_UPLOAD':
