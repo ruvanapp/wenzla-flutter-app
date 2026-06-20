@@ -236,10 +236,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'الإصدار 1.0.6',
-                style: TextStyle(
-                    fontFamily: 'Cairo', fontSize: 12, color: kTextMuted),
+              Consumer<AppState>(
+                builder: (_, app, __) {
+                  final ver = app.appVersionDisplay;
+                  return Text(
+                    ver.isNotEmpty ? 'الإصدار $ver' : 'الإصدار ...',
+                    style: const TextStyle(
+                        fontFamily: 'Cairo', fontSize: 12, color: kTextMuted),
+                  );
+                },
               ),
               const SizedBox(height: 14),
               const Text(
