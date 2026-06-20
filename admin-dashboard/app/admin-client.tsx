@@ -304,6 +304,7 @@ const NAV_ITEMS = [
     { key: 'wallet_recharge_requests', icon: '🏦', label: 'طلبات شحن المحفظة', permissions: ['wallet.view'] },
     { key: 'wallet_transactions', icon: '📒', label: 'سجل معاملات المحفظة', permissions: ['wallet.view'] },
     { key: 'whatsapp_support', icon: '💬', label: 'دعم واتساب', permissions: ['settings.manage'] },
+    { key: 'app_version', icon: '📲', label: 'إدارة التحديثات', permissions: ['settings.manage'] },
   ]},
   { group: 'الإدارة', items: [
     { key: 'technical',   icon: '⚙️',  label: 'المراقبة التقنية', permissions: ['monitoring.view'] },
@@ -941,6 +942,10 @@ export default function AdminClient() {
   const [promoCard, setPromoCard] = useState({ enabled: false, title: 'عروض اليوم', description: 'خصومات خاصة على منتجات مختارة لفترة محدودة', buttonText: 'تسوق الآن', actionType: 'none', actionTarget: '' });
   const [promoCardSaved, setPromoCardSaved] = useState({ enabled: false, title: 'عروض اليوم', description: 'خصومات خاصة على منتجات مختارة لفترة محدودة', buttonText: 'تسوق الآن', actionType: 'none', actionTarget: '' });
   const [promoCardStatus, setPromoCardStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  // Phase: App Version / Update Management
+  const [appVersion, setAppVersion] = useState({ enabled: false, latest_app_version: '1.0.0', minimum_app_version: '1.0.0', update_type: 'disabled', title: 'تحديث جديد متاح', message: 'يوجد إصدار أحدث من تطبيق سوق العسل لتحسين الأداء والتجربة.', play_store_url: 'https://play.google.com/store/apps/details?id=com.wenzla.customer' });
+  const [appVersionSaved, setAppVersionSaved] = useState({ enabled: false, latest_app_version: '1.0.0', minimum_app_version: '1.0.0', update_type: 'disabled', title: 'تحديث جديد متاح', message: 'يوجد إصدار أحدث من تطبيق سوق العسل لتحسين الأداء والتجربة.', play_store_url: 'https://play.google.com/store/apps/details?id=com.wenzla.customer' });
+  const [appVersionStatus, setAppVersionStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [shippingNewName, setShippingNewName] = useState('');
   const [shippingNewFee, setShippingNewFee] = useState('');
   const [shippingSearch, setShippingSearch] = useState('');
@@ -1128,6 +1133,7 @@ export default function AdminClient() {
       loadShippingZones();
       loadMinimumOrder();
       loadPromoCard();
+      loadAppVersionSettings();
     }
   }, [authorized, sessionUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1895,6 +1901,37 @@ export default function AdminClient() {
       setPromoCardStatus('error');
       window.setTimeout(() => setPromoCardStatus('idle'), 4000);
       toast.error('فشل حفظ كارت العروض');
+    }
+  }
+
+  async function loadAppVersionSettings() {
+    try {
+      const res = await api<typeof appVersion>('/admin/settings/app-version');
+      if (res) {
+        setAppVersion(res);
+        setAppVersionSaved(res);
+      }
+    } catch {}
+  }
+
+  async function saveAppVersionSettings() {
+    setAppVersionStatus('saving');
+    try {
+      const res = await api<typeof appVersion>('/admin/settings/app-version', {
+        method: 'PUT',
+        body: JSON.stringify(appVersion),
+      });
+      if (res) {
+        setAppVersion(res);
+        setAppVersionSaved(res);
+      }
+      setAppVersionStatus('success');
+      window.setTimeout(() => setAppVersionStatus('idle'), 2500);
+      toast.success('تم حفظ إعدادات التحديثات ✓');
+    } catch {
+      setAppVersionStatus('error');
+      window.setTimeout(() => setAppVersionStatus('idle'), 4000);
+      toast.error('فشل حفظ إعدادات التحديثات');
     }
   }
 
@@ -5270,6 +5307,136 @@ export default function AdminClient() {
               </div>
             </div>
           )}
+
+          {/* ════════════════════════════════════════════════════════
+              APP VERSION / UPDATE MANAGEMENT
+             ════════════════════════════════════════════════════════ */}
+          {activePanel === 'app_version' && (() => {
+            const dirty = JSON.stringify(appVersion) !== JSON.stringify(appVersionSaved);
+            return (
+              <div>
+                <div className="pg-header">
+                  <div>
+                    <h2 className="pg-title">إدارة تحديثات التطبيق</h2>
+                    <p className="pg-subtitle">التحكم في رسائل التحديث الإجباري والاختياري لتطبيق العميل</p>
+                  </div>
+                </div>
+
+                <div className="two-col">
+                  <div className={`admin-settings-card ${dirty ? 'dirty' : ''}`}>
+                    <div className="admin-settings-card-header">
+                      <span className="icon">📲</span>
+                      <h3>إعدادات التحديث</h3>
+                      {dirty && <span style={{ fontSize: 10, color: 'var(--gold)', fontWeight: 800 }}>غير محفوظ</span>}
+                    </div>
+                    <div className="admin-settings-card-body">
+                      <p className="helper">عند تفعيل هذه الإعدادات، سيرى المستخدمون رسالة تحديث عند فتح التطبيق إذا كان إصدارهم أقدم من الإصدار المحدد.</p>
+
+                      {/* Toggle enabled */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                        <button
+                          type="button"
+                          onClick={() => setAppVersion(v => ({ ...v, enabled: !v.enabled }))}
+                          style={{
+                            width: 48, height: 26, borderRadius: 14, border: 'none', cursor: 'pointer',
+                            background: appVersion.enabled ? 'var(--gold)' : 'rgba(71,39,21,0.18)',
+                            position: 'relative', transition: 'background .2s', flexShrink: 0,
+                          }}
+                        >
+                          <span style={{
+                            position: 'absolute', top: 3, left: appVersion.enabled ? 25 : 3,
+                            width: 20, height: 20, borderRadius: '50%', background: 'white', transition: 'left .2s',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                          }} />
+                        </button>
+                        <span style={{ fontSize: 12, color: 'var(--brown)', fontWeight: 700 }}>
+                          {appVersion.enabled ? '✓ مفعّل — سيتم فحص التحديثات' : '✕ معطّل — لن يظهر أي إشعار تحديث'}
+                        </span>
+                      </div>
+
+                      {/* Update Type */}
+                      <label>نوع التحديث</label>
+                      <select
+                        value={appVersion.update_type}
+                        onChange={e => setAppVersion(v => ({ ...v, update_type: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(71,39,21,0.2)', fontFamily: 'Cairo', fontSize: 13, marginBottom: 10 }}
+                      >
+                        <option value="disabled">معطّل (بدون تحديث)</option>
+                        <option value="optional">اختياري (يمكن التخطي)</option>
+                        <option value="force">إجباري (لا يمكن التخطي)</option>
+                      </select>
+
+                      {/* Latest version */}
+                      <label>أحدث إصدار متاح (latest_app_version)</label>
+                      <input type="text" value={appVersion.latest_app_version} onChange={e => setAppVersion(v => ({ ...v, latest_app_version: e.target.value }))} maxLength={20} placeholder="1.0.20" />
+                      <div style={{ height: 10 }} />
+
+                      {/* Minimum version */}
+                      <label>الحد الأدنى المطلوب (minimum_app_version)</label>
+                      <input type="text" value={appVersion.minimum_app_version} onChange={e => setAppVersion(v => ({ ...v, minimum_app_version: e.target.value }))} maxLength={20} placeholder="1.0.18" />
+                      <div style={{ height: 10 }} />
+
+                      {/* Title */}
+                      <label>عنوان رسالة التحديث</label>
+                      <input type="text" value={appVersion.title} onChange={e => setAppVersion(v => ({ ...v, title: e.target.value }))} maxLength={100} placeholder="تحديث جديد متاح" />
+                      <div style={{ height: 10 }} />
+
+                      {/* Message */}
+                      <label>نص رسالة التحديث</label>
+                      <textarea value={appVersion.message} onChange={e => setAppVersion(v => ({ ...v, message: e.target.value }))} rows={3} maxLength={500} placeholder="يوجد إصدار أحدث من تطبيق سوق العسل..." />
+                      <div style={{ height: 10 }} />
+
+                      {/* Play Store URL */}
+                      <label>رابط Google Play Store</label>
+                      <input type="text" value={appVersion.play_store_url} onChange={e => setAppVersion(v => ({ ...v, play_store_url: e.target.value }))} maxLength={500} placeholder="https://play.google.com/store/apps/details?id=com.wenzla.customer" />
+                    </div>
+                    <div className="admin-settings-card-footer">
+                      {appVersionStatus === 'saving' && <span className="save-indicator saving">⏳ جاري الحفظ…</span>}
+                      {appVersionStatus === 'success' && <span className="save-indicator success">✓ تم الحفظ</span>}
+                      {appVersionStatus === 'error' && <span className="save-indicator error">✕ فشل الحفظ</span>}
+                      <button className="admin-row-btn" disabled={!dirty} onClick={() => setAppVersion(appVersionSaved)}>
+                        إلغاء
+                      </button>
+                      <button className="admin-row-btn primary" disabled={!dirty || appVersionStatus === 'saving'} onClick={saveAppVersionSettings}>
+                        💾 حفظ
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Preview card */}
+                  <div className="chart-panel">
+                    <h3 className="chart-panel-title">📱 معاينة الإعدادات الحالية</h3>
+                    <div style={{ marginTop: 12, display: 'grid', gap: 8, fontSize: 13, fontFamily: 'Cairo' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(71,39,21,0.08)' }}>
+                        <span style={{ color: 'var(--muted)' }}>الحالة</span>
+                        <span style={{ fontWeight: 700, color: appVersionSaved.enabled ? '#22c55e' : '#ef4444' }}>
+                          {appVersionSaved.enabled ? '✓ مفعّل' : '✕ معطّل'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(71,39,21,0.08)' }}>
+                        <span style={{ color: 'var(--muted)' }}>نوع التحديث</span>
+                        <span style={{ fontWeight: 700, color: appVersionSaved.update_type === 'force' ? '#ef4444' : appVersionSaved.update_type === 'optional' ? '#f59e0b' : 'var(--muted)' }}>
+                          {appVersionSaved.update_type === 'force' ? '⛔ إجباري' : appVersionSaved.update_type === 'optional' ? '🔔 اختياري' : '⏸ معطّل'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(71,39,21,0.08)' }}>
+                        <span style={{ color: 'var(--muted)' }}>أحدث إصدار</span>
+                        <span style={{ fontWeight: 700 }}>{appVersionSaved.latest_app_version}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(71,39,21,0.08)' }}>
+                        <span style={{ color: 'var(--muted)' }}>الحد الأدنى</span>
+                        <span style={{ fontWeight: 700 }}>{appVersionSaved.minimum_app_version}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
+                        <span style={{ color: 'var(--muted)' }}>عنوان الرسالة</span>
+                        <span style={{ fontWeight: 700 }}>{appVersionSaved.title}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {activePanel === 'wallet_recharge_requests' && (
             <div>

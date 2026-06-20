@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
 import '../services/home_cache_service.dart';
@@ -58,6 +59,130 @@ class AppState extends ChangeNotifier {
   CheckoutError?        _lastCheckoutError;
   PackageInfo?          _cachedPackageInfo;
 
+  // ── App Update Check ──────────────────────────────────────────────────────
+  Map<String, dynamic>? _updateConfig;
+  String?               _updateAction; // null | 'force' | 'optional'
+
+  /// The resolved update action after checking version: null (no update),
+  /// 'force' (must update), or 'optional' (can dismiss).
+  String?               get updateAction => _updateAction;
+  Map<String, dynamic>? get updateConfig => _updateConfig;
+
+  /// Version string for display (e.g. "1.0.23+23")
+  String get appVersionDisplay {
+    final pi = _cachedPackageInfo;
+    if (pi == null) return '';
+    return '${pi.version}+${pi.buildNumber}';
+  }
+
+  /// Semantic version string only (e.g. "1.0.23")
+  String get appVersionString => _cachedPackageInfo?.version ?? '';
+
+  /// Check for available app updates from the backend.
+  /// Safe: silently fails on network errors and falls back to cached config.
+  Future<void> checkAppUpdate() async {
+    try {
+      final pkg = await _getPackageInfo();
+      final api = ApiService(token: _token);
+
+      Map<String, dynamic>? config;
+      try {
+        final res = await api.get('/customer/app-version',
+            traceLabel: 'app-version-check');
+        if (res is Map<String, dynamic>) {
+          config = res;
+          // Cache successful response
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('cached_app_version_config', jsonEncode(config));
+          debugPrint('[AppUpdate] fetched config: enabled=${config['enabled']}, '
+              'type=${config['update_type']}, min=${config['minimum_app_version']}, '
+              'latest=${config['latest_app_version']}');
+        }
+      } catch (e) {
+        debugPrint('[AppUpdate] API failed, trying cache: $e');
+        // Fall back to cached config
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString('cached_app_version_config');
+        if (cached != null) {
+          try {
+            config = jsonDecode(cached) as Map<String, dynamic>;
+            debugPrint('[AppUpdate] using cached config');
+          } catch (_) {}
+        }
+      }
+
+      if (config == null) {
+        debugPrint('[AppUpdate] no config available, skipping check');
+        return;
+      }
+
+      _updateConfig = config;
+
+      final enabled = config['enabled'] == true;
+      final updateType = config['update_type']?.toString() ?? 'disabled';
+
+      if (!enabled || updateType == 'disabled') {
+        _updateAction = null;
+        debugPrint('[AppUpdate] disabled, no update prompt');
+        return;
+      }
+
+      final currentVersion = pkg.version;
+      final minimumVersion = config['minimum_app_version']?.toString() ?? '0.0.0';
+      final latestVersion = config['latest_app_version']?.toString() ?? '0.0.0';
+
+      // Force update: current < minimum
+      if (_isVersionLower(currentVersion, minimumVersion)) {
+        _updateAction = 'force';
+        debugPrint('[AppUpdate] FORCE update: $currentVersion < $minimumVersion');
+        notifyListeners();
+        return;
+      }
+
+      // Optional update: current < latest and type is optional
+      if (updateType == 'optional' && _isVersionLower(currentVersion, latestVersion)) {
+        _updateAction = 'optional';
+        debugPrint('[AppUpdate] OPTIONAL update: $currentVersion < $latestVersion');
+        notifyListeners();
+        return;
+      }
+
+      // Force type but above minimum — still force if below latest
+      if (updateType == 'force' && _isVersionLower(currentVersion, latestVersion)) {
+        _updateAction = 'force';
+        debugPrint('[AppUpdate] FORCE (type=force, below latest): $currentVersion < $latestVersion');
+        notifyListeners();
+        return;
+      }
+
+      _updateAction = null;
+      debugPrint('[AppUpdate] app is up to date ($currentVersion >= $latestVersion)');
+    } catch (e) {
+      debugPrint('[AppUpdate] unexpected error: $e');
+      _updateAction = null;
+    }
+  }
+
+  /// Dismiss optional update prompt.
+  void dismissUpdatePrompt() {
+    _updateAction = null;
+    notifyListeners();
+  }
+
+  /// Compare semantic version strings. Returns true if a < b.
+  static bool _isVersionLower(String a, String b) {
+    final aParts = a.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+    final bParts = b.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+    // Pad to same length
+    while (aParts.length < 3) aParts.add(0);
+    while (bParts.length < 3) bParts.add(0);
+    for (int i = 0; i < 3; i++) {
+      if (aParts[i] < bParts[i]) return true;
+      if (aParts[i] > bParts[i]) return false;
+    }
+    return false; // equal
+  }
+
   String?               get token => _token;
   Map<String, dynamic>? get user  => _user;
   bool                  get isLoggedIn => _token != null;
@@ -75,6 +200,8 @@ class AppState extends ChangeNotifier {
     final saved = await StorageService.loadAuth();
     _token = saved.token;
     _user  = saved.user;
+    // Pre-load PackageInfo so appVersionDisplay is available early
+    _getPackageInfo().then((_) => notifyListeners());
     notifyListeners();
     if (isLoggedIn) {
       await refreshProfile(silent: true);
@@ -278,7 +405,11 @@ class AppState extends ChangeNotifier {
   List<dynamic> _homeSections      = [];
   List<dynamic> _homeCmsCategories = [];
   List<dynamic> _featuredStores    = [];
+  List<dynamic> _featuredProducts  = [];
+  List<dynamic> _bestSellers       = [];
+  List<dynamic> _newArrivals       = [];
   bool          _cmsLoading        = false;
+  bool          _productsLoading   = false;
   Map<String, dynamic>? _homePromoCard;
 
   List<dynamic> get homeBanners       => _homeBanners;
@@ -286,7 +417,11 @@ class AppState extends ChangeNotifier {
   List<dynamic> get homeSections      => _homeSections;
   List<dynamic> get homeCmsCategories => _homeCmsCategories;
   List<dynamic> get featuredStores    => _featuredStores;
+  List<dynamic> get featuredProducts  => _featuredProducts;
+  List<dynamic> get bestSellers       => _bestSellers;
+  List<dynamic> get newArrivals       => _newArrivals;
   bool          get cmsLoading        => _cmsLoading;
+  bool          get productsLoading   => _productsLoading;
   Map<String, dynamic>? get homePromoCard => _homePromoCard;
 
   Future<void> loadHomePromoCard() async {
@@ -304,6 +439,8 @@ class AppState extends ChangeNotifier {
   bool get hasCmsCategories => _homeCmsCategories.isNotEmpty;
   /// Whether the CMS has featured stores configured
   bool get hasFeaturedStores => _featuredStores.isNotEmpty;
+  /// Whether the CMS has featured products configured
+  bool get hasFeaturedProducts => _featuredProducts.isNotEmpty;
 
   Future<void> loadHomeCms({bool force = false}) async {
     // Skip re-fetch if data is already loaded, unless forced (e.g. pull-to-refresh)
@@ -318,6 +455,7 @@ class AppState extends ChangeNotifier {
         _homeSections      = cached['sections']       is List ? List.from(cached['sections'])       : [];
         _homeCmsCategories = cached['categories']     is List ? List.from(cached['categories'])     : [];
         _featuredStores    = cached['featuredStores'] is List ? List.from(cached['featuredStores']) : [];
+        _featuredProducts  = cached['featuredProducts'] is List ? List.from(cached['featuredProducts']) : [];
         if (_homeBanners.isNotEmpty || _homeCmsCategories.isNotEmpty) {
           notifyListeners();
         }
@@ -336,6 +474,7 @@ class AppState extends ChangeNotifier {
         _homeSections      = res['sections']       is List ? List.from(res['sections'])       : [];
         _homeCmsCategories = res['categories']     is List ? List.from(res['categories'])     : [];
         _featuredStores    = res['featuredStores'] is List ? List.from(res['featuredStores']) : [];
+        _featuredProducts  = res['featuredProducts'] is List ? List.from(res['featuredProducts']) : [];
         // Save to disk cache
         unawaited(HomeCacheService.saveCms(Map<String, dynamic>.from(res)));
       }
@@ -343,6 +482,26 @@ class AppState extends ChangeNotifier {
       // silently fail — cached or skeleton content remains
     } finally {
       _cmsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Load best-selling and newly-arrived products for home screen sections
+  Future<void> loadHomeProducts({bool force = false}) async {
+    if (!force && _bestSellers.isNotEmpty) return;
+    _productsLoading = true;
+    try {
+      final api = ApiService(token: _token);
+      final results = await Future.wait([
+        api.get('/customer/products/best-sellers'),
+        api.get('/customer/products/new-arrivals'),
+      ]);
+      _bestSellers = results[0] is List ? List.from(results[0]) : [];
+      _newArrivals = results[1] is List ? List.from(results[1]) : [];
+    } catch (_) {
+      // silently fail — sections will be hidden if empty
+    } finally {
+      _productsLoading = false;
       notifyListeners();
     }
   }
