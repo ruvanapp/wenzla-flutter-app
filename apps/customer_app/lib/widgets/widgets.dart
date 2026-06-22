@@ -615,17 +615,36 @@ class NetImage extends StatelessWidget {
     return safeUrl.replaceFirst('/image/upload/', '/image/upload/${transforms.join(',')}/');
   }
 
+  /// Returns true if the URL already contains Cloudinary transforms
+  /// (i.e. was already passed through optimizeCloudinaryUrl).
+  static bool _hasCloudinaryTransforms(String url) {
+    if (!url.contains('res.cloudinary.com') ||
+        !url.contains('/image/upload/')) return false;
+    final afterUpload =
+        url.split('/image/upload/').last;
+    return afterUpload.startsWith('f_auto') ||
+        afterUpload.startsWith('w_') ||
+        afterUpload.startsWith('q_');
+  }
+
   @override
   Widget build(BuildContext context) {
     final safeUrl = url?.trim();
     if (safeUrl == null || safeUrl.isEmpty || !safeUrl.startsWith('http')) {
       return _placeholder();
     }
-    final optimizedUrl = optimizeCloudinaryUrl(
-      safeUrl,
-      width: width?.round(),
-      height: height?.round(),
-    );
+    // Skip re-optimization if URL was already optimized upstream
+    final optimizedUrl = _hasCloudinaryTransforms(safeUrl)
+        ? safeUrl
+        : optimizeCloudinaryUrl(
+            safeUrl,
+            width: width?.round(),
+            height: height?.round(),
+          );
+    // Compute target pixel dimensions for memory/disk cache
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final cacheW = width != null ? (width! * dpr).round() : null;
+    final cacheH = height != null ? (height! * dpr).round() : null;
     Widget img = CachedNetworkImage(
       imageUrl: optimizedUrl ?? safeUrl,
       width: width,
@@ -633,12 +652,12 @@ class NetImage extends StatelessWidget {
       fit: fit,
       placeholder: (_, __) => _shimmer(),
       errorWidget: (_, __, ___) => _placeholder(),
-      fadeInDuration: const Duration(milliseconds: 120),
-      fadeOutDuration: const Duration(milliseconds: 80),
-      memCacheWidth: width != null ? (width! * 2).toInt() : null,
-      memCacheHeight: height != null ? (height! * 2).toInt() : null,
-      maxWidthDiskCache: width != null ? (width! * 2).toInt() : null,
-      maxHeightDiskCache: height != null ? (height! * 2).toInt() : null,
+      fadeInDuration: const Duration(milliseconds: 100),
+      fadeOutDuration: const Duration(milliseconds: 60),
+      memCacheWidth: cacheW,
+      memCacheHeight: cacheH,
+      maxWidthDiskCache: cacheW,
+      maxHeightDiskCache: cacheH,
     );
     if (borderRadius != null) {
       img = ClipRRect(borderRadius: borderRadius!, child: img);

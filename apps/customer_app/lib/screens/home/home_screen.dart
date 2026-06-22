@@ -545,6 +545,8 @@ class _HomeScreenState extends State<HomeScreen> {
           if (imageUrl != null)
             NetImage(
               url: imageUrl,
+              width: 400,
+              height: 130,
               fit: BoxFit.cover,
               fallback: '',
             ),
@@ -757,10 +759,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding:          const EdgeInsets.symmetric(horizontal: 14),
                 reverse:          true,
                 itemCount:        cats.length,
-                itemBuilder: (_, i) => FadeInWidget(
-                  delay: Duration(milliseconds: i * 60),
-                  child: _buildCmsCategoryChip(cats[i]),
-                ),
+                itemBuilder: (_, i) => _buildCmsCategoryChip(cats[i]),
               ),
             ),
             const SizedBox(height: 4),
@@ -780,10 +779,7 @@ class _HomeScreenState extends State<HomeScreen> {
               padding:          const EdgeInsets.symmetric(horizontal: 14),
               reverse:          true,
               itemCount:        _mainCategories.length,
-              itemBuilder: (_, i) => FadeInWidget(
-                delay: Duration(milliseconds: i * 60),
-                child: _buildStaticCategoryChip(_mainCategories[i]),
-              ),
+              itemBuilder: (_, i) => _buildStaticCategoryChip(_mainCategories[i]),
             ),
           ),
           const SizedBox(height: 4),
@@ -947,9 +943,9 @@ class _HomeScreenState extends State<HomeScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               reverse: true,
+              cacheExtent: 300,
               itemCount: items.length,
-              itemBuilder: (_, i) => FadeInWidget(
-                delay: Duration(milliseconds: i * 60),
+              itemBuilder: (_, i) => RepaintBoundary(
                 child: _buildProductCard(items[i]),
               ),
             ),
@@ -978,7 +974,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 itemBuilder: (_, __) => Container(
                   width: 160,
                   margin: const EdgeInsets.symmetric(horizontal: 6),
-                  child: const ShimmerBox(height: 220),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: const [
+                      ShimmerBox(height: 120, borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+                      SizedBox(height: 8),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: ShimmerBox(height: 12)),
+                      SizedBox(height: 6),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: ShimmerBox(height: 10, width: 80)),
+                      Spacer(),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: ShimmerBox(height: 14, width: 60)),
+                      SizedBox(height: 10),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1003,9 +1015,9 @@ class _HomeScreenState extends State<HomeScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               reverse: true,
+              cacheExtent: 300,
               itemCount: items.length,
-              itemBuilder: (_, i) => FadeInWidget(
-                delay: Duration(milliseconds: i * 60),
+              itemBuilder: (_, i) => RepaintBoundary(
                 child: _buildProductCard(items[i]),
               ),
             ),
@@ -1034,7 +1046,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 itemBuilder: (_, __) => Container(
                   width: 160,
                   margin: const EdgeInsets.symmetric(horizontal: 6),
-                  child: const ShimmerBox(height: 220),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: const [
+                      ShimmerBox(height: 120, borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+                      SizedBox(height: 8),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: ShimmerBox(height: 12)),
+                      SizedBox(height: 6),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: ShimmerBox(height: 10, width: 80)),
+                      Spacer(),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: ShimmerBox(height: 14, width: 60)),
+                      SizedBox(height: 10),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1059,9 +1087,9 @@ class _HomeScreenState extends State<HomeScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               reverse: true,
+              cacheExtent: 300,
               itemCount: items.length,
-              itemBuilder: (_, i) => FadeInWidget(
-                delay: Duration(milliseconds: i * 60),
+              itemBuilder: (_, i) => RepaintBoundary(
                 child: _buildProductCard(items[i]),
               ),
             ),
@@ -1102,7 +1130,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: SizedBox(
                 height: 120,
                 child: imageUrl != null
-                    ? NetImage(url: imageUrl, fit: BoxFit.cover, fallback: '')
+                    ? NetImage(url: imageUrl, width: 160, height: 120, fit: BoxFit.cover, fallback: '')
                     : Container(
                         color: kSurfaceWarm,
                         child: const Center(child: Text('🍯', style: TextStyle(fontSize: 32))),
@@ -1130,24 +1158,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Text(price.isNotEmpty ? '$price ج.م' : '',
                             style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w800, fontSize: 13, color: kHoney)),
                         ),
-                        GestureDetector(
-                          onTap: () {
-                            final added = context.read<AppState>().addToCart(product);
-                            if (!added) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('لا يمكن إضافة منتجات من متاجر مختلفة', style: TextStyle(fontFamily: 'Cairo')), backgroundColor: kError),
-                              );
-                            }
-                          },
-                          child: Container(
-                            width: 30, height: 30,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(colors: [kHoney, kDarkHoney]),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(Icons.add_rounded, color: Colors.white, size: 18),
-                          ),
-                        ),
+                        _AddToCartButton(product: product),
                       ],
                     ),
                   ],
@@ -1266,9 +1277,9 @@ class _HomeScreenState extends State<HomeScreen> {
               scrollDirection: Axis.horizontal,
               padding:         const EdgeInsets.symmetric(horizontal: 14),
               reverse:         true,
+              cacheExtent:     300,
               itemCount:       cards.length,
-              itemBuilder:     (_, i) => FadeInWidget(
-                delay: Duration(milliseconds: i * 80),
+              itemBuilder:     (_, i) => RepaintBoundary(
                 child: _buildFeaturedStoreCard(cards[i]),
               ),
             ),
@@ -1297,6 +1308,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (cardImageUrl != null && cardImageUrl.isNotEmpty) {
         return NetImage(
           url: cardImageUrl,
+          width: 176,
           height: 106,
           fit: BoxFit.cover,
           borderRadius: radius,
@@ -1432,6 +1444,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 Positioned.fill(
                   child: NetImage(
                     url: imageUrl,
+                    width: 400,
+                    height: 160,
                     fit: BoxFit.cover,
                     fallback: '',
                   ),
@@ -1620,8 +1634,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 childAspectRatio: 0.95,
               ),
               itemCount: stores.length,
-              itemBuilder: (_, i) => FadeInWidget(
-                delay: Duration(milliseconds: (i * 50).clamp(0, 400)),
+              itemBuilder: (_, i) => RepaintBoundary(
                 child: _buildStoreGridCard(stores[i]),
               ),
             ),
@@ -1648,6 +1661,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (cardImageUrl != null && cardImageUrl.isNotEmpty) {
         return NetImage(
           url: cardImageUrl,
+          width: 180,
           height: 130,
           fit: BoxFit.cover,
           borderRadius: radius,
@@ -2193,6 +2207,92 @@ class _CategoryStoresSheet extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Add-to-Cart Button with feedback ─────────────────────────────────────────
+class _AddToCartButton extends StatefulWidget {
+  final Map<String, dynamic> product;
+  const _AddToCartButton({required this.product});
+  @override
+  State<_AddToCartButton> createState() => _AddToCartButtonState();
+}
+
+class _AddToCartButtonState extends State<_AddToCartButton> {
+  /// null = idle, true = success animation, false = error
+  bool? _result;
+  bool _busy = false;
+
+  void _onTap() {
+    if (_busy) return; // prevent double-tap
+    setState(() => _busy = true);
+
+    final added = context.read<AppState>().addToCart(widget.product);
+
+    if (added) {
+      setState(() => _result = true);
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(const SnackBar(
+          content: Text('تمت إضافة المنتج إلى السلة',
+              style: TextStyle(fontFamily: 'Cairo')),
+          backgroundColor: kSuccess,
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ));
+      // Revert icon after 800ms
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted) setState(() { _result = null; _busy = false; });
+      });
+    } else {
+      setState(() => _result = false);
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(const SnackBar(
+          content: Text('لا يمكن إضافة منتجات من متاجر مختلفة',
+              style: TextStyle(fontFamily: 'Cairo')),
+          backgroundColor: kError,
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ));
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted) setState(() { _result = null; _busy = false; });
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final IconData icon;
+    final List<Color> colors;
+
+    if (_result == true) {
+      icon = Icons.check_rounded;
+      colors = const [kSuccess, kSuccess];
+    } else if (_result == false) {
+      icon = Icons.close_rounded;
+      colors = const [kError, kError];
+    } else {
+      icon = Icons.add_rounded;
+      colors = const [kHoney, kDarkHoney];
+    }
+
+    return GestureDetector(
+      onTap: _onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: colors),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: Icon(icon, key: ValueKey(icon), color: Colors.white, size: 18),
         ),
       ),
     );

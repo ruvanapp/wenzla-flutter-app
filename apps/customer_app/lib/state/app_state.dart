@@ -68,11 +68,12 @@ class AppState extends ChangeNotifier {
   String?               get updateAction => _updateAction;
   Map<String, dynamic>? get updateConfig => _updateConfig;
 
-  /// Version string for display (e.g. "1.0.23+23")
+  /// Version string for display (e.g. "1.0.20 (20)")
+  /// Uses parentheses instead of + to avoid RTL bidi text reversal.
   String get appVersionDisplay {
     final pi = _cachedPackageInfo;
     if (pi == null) return '';
-    return '${pi.version}+${pi.buildNumber}';
+    return '${pi.version} (${pi.buildNumber})';
   }
 
   /// Semantic version string only (e.g. "1.0.23")
@@ -513,6 +514,11 @@ class AppState extends ChangeNotifier {
   List<dynamic>         _storeReviews  = [];
   bool                  _loadingStore  = false;
 
+  /// In-memory cache: storeId → {store, products, reviews, ts}
+  /// Avoids re-fetching when re-opening a recently visited store.
+  static const _storeCacheTtl = Duration(minutes: 5);
+  final Map<String, Map<String, dynamic>> _storeCache = {};
+
   String?               get selectedStoreId => _selectedStoreId;
   Map<String, dynamic>? get selectedStore   => _selectedStore;
   List<dynamic>         get storeProducts   => _storeProducts;
@@ -522,29 +528,30 @@ class AppState extends ChangeNotifier {
   Future<void> openStore(String storeId) async {
     _previousBottomIndex = _bottomIndex;
     _selectedStoreId = storeId;
+
+    // ── Try cache first ─────────────────────────────────────────────────
+    final cached = _storeCache[storeId];
+    final cacheValid = cached != null &&
+        DateTime.now().difference(
+                DateTime.fromMillisecondsSinceEpoch(cached['ts'] as int)) <
+            _storeCacheTtl;
+
+    if (cacheValid) {
+      _selectedStore  = Map<String, dynamic>.from(cached['store'] as Map);
+      _storeProducts  = List.from(cached['products'] as List);
+      _storeReviews   = List.from(cached['reviews'] as List);
+      _loadingStore   = false;
+      showScreen(AppScreen.storeDetail);
+      _refreshStoreInBackground(storeId);
+      return;
+    }
+
     _selectedStore   = null;
     _storeProducts   = [];
     _storeReviews    = [];
     _loadingStore    = true;
     showScreen(AppScreen.storeDetail);
-    try {
-      final api = ApiService(token: _token);
-      final res = await api.get('/customer/stores/$storeId');
-      debugPrint('[openStore] storeId=$storeId responseType=${res.runtimeType}');
-      if (res is Map) {
-        _selectedStore  = Map<String, dynamic>.from(res);
-        _storeProducts  = res['products'] is List ? List.from(res['products']) : [];
-        _storeReviews   = res['reviews']  is List ? List.from(res['reviews'])  : [];
-        debugPrint('[openStore] selectedStore keys=${_selectedStore?.keys.toList()} products=${_storeProducts.length} reviews=${_storeReviews.length}');
-      } else {
-        _screen = _bottomIndexToScreen(_previousBottomIndex);
-      }
-    } catch (_) {
-      _screen = _bottomIndexToScreen(_previousBottomIndex);
-    } finally {
-      _loadingStore = false;
-      notifyListeners();
-    }
+    await _fetchAndCacheStore(storeId);
   }
 
   Future<bool> openStoreWithData(Map<String, dynamic> store) async {
@@ -553,29 +560,85 @@ class AppState extends ChangeNotifier {
 
     _previousBottomIndex = _bottomIndex;
     _selectedStoreId = storeId;
+
+    // ── Try cache first ─────────────────────────────────────────────────
+    final cached = _storeCache[storeId];
+    final cacheValid = cached != null &&
+        DateTime.now().difference(
+                DateTime.fromMillisecondsSinceEpoch(cached['ts'] as int)) <
+            _storeCacheTtl;
+
+    if (cacheValid) {
+      _selectedStore  = Map<String, dynamic>.from(cached['store'] as Map);
+      _storeProducts  = List.from(cached['products'] as List);
+      _storeReviews   = List.from(cached['reviews'] as List);
+      _loadingStore   = false;
+      showScreen(AppScreen.storeDetail);
+      _refreshStoreInBackground(storeId);
+      return true;
+    }
+
+    // Show partial store data immediately (header visible right away)
     _selectedStore = Map<String, dynamic>.from(store);
     _storeProducts = store['products'] is List ? List.from(store['products']) : [];
     _storeReviews = store['reviews'] is List ? List.from(store['reviews']) : [];
     _loadingStore = true;
     showScreen(AppScreen.storeDetail);
 
+    await _fetchAndCacheStore(storeId);
+    return _selectedStore != null;
+  }
+
+  /// Fetch store data from API and update cache + state.
+  Future<void> _fetchAndCacheStore(String storeId) async {
     try {
       final api = ApiService(token: _token);
       final res = await api.get('/customer/stores/$storeId');
-      debugPrint('[openStoreWithData] storeId=$storeId responseType=${res.runtimeType}');
       if (res is Map) {
         _selectedStore = Map<String, dynamic>.from(res);
-        _storeProducts = res['products'] is List ? List.from(res['products']) : _storeProducts;
-        _storeReviews = res['reviews'] is List ? List.from(res['reviews']) : _storeReviews;
-        return true;
+        _storeProducts = res['products'] is List ? List.from(res['products']) : [];
+        _storeReviews  = res['reviews']  is List ? List.from(res['reviews'])  : [];
+        _storeCache[storeId] = {
+          'store':    Map<String, dynamic>.from(res),
+          'products': List.from(_storeProducts),
+          'reviews':  List.from(_storeReviews),
+          'ts':       DateTime.now().millisecondsSinceEpoch,
+        };
+      } else if (_selectedStore == null) {
+        _screen = _bottomIndexToScreen(_previousBottomIndex);
       }
-      return true;
     } catch (_) {
-      return _selectedStore != null;
+      if (_selectedStore == null) {
+        _screen = _bottomIndexToScreen(_previousBottomIndex);
+      }
     } finally {
       _loadingStore = false;
       notifyListeners();
     }
+  }
+
+  /// Silently refresh store data in background (stale-while-revalidate).
+  void _refreshStoreInBackground(String storeId) {
+    unawaited(() async {
+      try {
+        final api = ApiService(token: _token);
+        final res = await api.get('/customer/stores/$storeId');
+        if (res is Map && _selectedStoreId == storeId) {
+          _selectedStore = Map<String, dynamic>.from(res);
+          _storeProducts = res['products'] is List ? List.from(res['products']) : _storeProducts;
+          _storeReviews  = res['reviews']  is List ? List.from(res['reviews'])  : _storeReviews;
+          _storeCache[storeId] = {
+            'store':    Map<String, dynamic>.from(res),
+            'products': List.from(_storeProducts),
+            'reviews':  List.from(_storeReviews),
+            'ts':       DateTime.now().millisecondsSinceEpoch,
+          };
+          notifyListeners();
+        }
+      } catch (_) {
+        // Silent — cached data still displayed
+      }
+    }());
   }
 
   /// Back-navigate out of a store — restores the tab that was active before openStore().

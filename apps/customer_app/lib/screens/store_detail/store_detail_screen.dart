@@ -97,12 +97,6 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
     }
 
     final store = st.selectedStore;
-    debugPrint(
-      '[StoreDetailScreen] loading=${st.loadingStore} '
-      'storeKeys=${store?.keys.toList()} '
-      'products=${st.storeProducts.length} '
-      'reviews=${st.storeReviews.length}',
-    );
     final hasStoreData = store != null &&
         ((store['storeName'] as String?)?.trim().isNotEmpty == true ||
             (store['id'] as String?)?.trim().isNotEmpty == true);
@@ -445,7 +439,6 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
   List<Widget> _productSlivers(
       BuildContext context, List<dynamic> products, bool loading) {
     if (products.isEmpty && loading) {
-      // Show shimmer grid skeleton while products are loading
       return [
         SliverPadding(
           padding: const EdgeInsets.all(12),
@@ -459,8 +452,35 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
             delegate: SliverChildBuilderDelegate(
               (_, __) => Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF5F0E8),
+                  color: kSurface,
                   borderRadius: BorderRadius.circular(14),
+                  boxShadow: kCardShadow,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Image area shimmer
+                    ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                      child: const ShimmerBox(height: 130, borderRadius: BorderRadius.zero),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          // Title line
+                          ShimmerBox(height: 12, width: 100),
+                          SizedBox(height: 8),
+                          // Subtitle line
+                          ShimmerBox(height: 10, width: 60),
+                          SizedBox(height: 12),
+                          // Price line
+                          ShimmerBox(height: 14, width: 70),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
               childCount: 6,
@@ -699,7 +719,12 @@ class _StoreDetailScreenState extends State<StoreDetailScreen>
     final name   = (p['name']     as String?) ?? '';
     final price  = double.tryParse(p['price']?.toString() ?? '0') ?? 0;
     final oldPrice = double.tryParse(p['oldPrice']?.toString() ?? '');
-    final imgUrl = (p['imageUrl'] as String?);
+    final imgUrl = NetImage.optimizeCloudinaryUrl(
+      (p['imageUrl'] as String?),
+      width: 360,
+      height: 260,
+      crop: 'fill',
+    );
     final displayRating = (p['displayRating'] as num?)?.toDouble();
     final st = context.watch<AppState>();
     final cartIndex = st.cart.indexWhere((item) => (item as Map)['id'] == p['id']);
@@ -1030,8 +1055,12 @@ class _TabsDelegate extends SliverPersistentHeaderDelegate {
 
   const _TabsDelegate({required this.tabs, this.onTabTap});
 
-  @override double get minExtent => 52;
-  @override double get maxExtent => 52;
+  static const _kHeight = 48.0;
+  @override double get minExtent => _kHeight;
+  @override double get maxExtent => _kHeight;
+
+  @override
+  bool shouldRebuild(covariant _TabsDelegate old) => tabs != old.tabs;
 
   @override
   Widget build(
@@ -1063,9 +1092,6 @@ class _TabsDelegate extends SliverPersistentHeaderDelegate {
       ),
     );
   }
-
-  @override
-  bool shouldRebuild(_TabsDelegate old) => old.tabs != tabs;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
