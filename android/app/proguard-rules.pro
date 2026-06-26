@@ -13,6 +13,14 @@
 
 # Firebase
 -keep class com.google.firebase.** { *; }
+-keepattributes *Annotation*
+-keepattributes SourceFile,LineNumberTable
+-keep public class * extends java.lang.Exception
+-printmapping mapping.txt
+
+# Crashlytics NDK
+-keep class com.google.firebase.crashlytics.** { *; }
+-dontwarn com.google.firebase.crashlytics.**
 
 # Facebook SDK
 -keep class com.facebook.** { *; }

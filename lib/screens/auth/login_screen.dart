@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../services/api_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
 import '../../widgets/widgets.dart';
@@ -297,6 +299,8 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     setState(() { _loading = true; _error = ''; });
     final phone = '$_dialCode${_phoneCtrl.text.trim()}';
+    final maskedPhone = ApiService.maskPhone(ApiService.normalisePhone(phone));
+    FirebaseCrashlytics.instance.log('[Login] Request send-otp for $maskedPhone');
     final st    = context.read<AppState>();
     final ok    = await st.sendOtp(phone);
     if (!mounted) return;
@@ -305,10 +309,12 @@ class _LoginScreenState extends State<LoginScreen> {
       _otpSent = _otpSent || ok;
     });
     if (ok) {
+      FirebaseCrashlytics.instance.log('[Login] send-otp UI success for $maskedPhone');
       _startCooldown();
     } else {
       final serverMsg = st.lastOtpError;
       st.consumeLastOtpError();
+      FirebaseCrashlytics.instance.log('[Login] send-otp UI failure for $maskedPhone: $serverMsg');
       setState(() => _error = serverMsg ?? 'فشل إرسال رمز التحقق، حاول مرة أخرى');
     }
   }
@@ -332,10 +338,17 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     setState(() { _loading = true; _error = ''; });
     final phone = '$_dialCode${_phoneCtrl.text.trim()}';
+    final maskedPhone = ApiService.maskPhone(ApiService.normalisePhone(phone));
+    FirebaseCrashlytics.instance.log('[Login] Request verify-otp for $maskedPhone');
     final referral = _referralCtrl.text.trim().isNotEmpty ? _referralCtrl.text.trim() : null;
     final ok    = await context.read<AppState>().verifyOtp(phone, _otpCtrl.text, referralCode: referral);
     if (!mounted) return;
     setState(() => _loading = false);
-    if (!ok) setState(() => _error = 'رمز التحقق غير صحيح');
+    if (ok) {
+      FirebaseCrashlytics.instance.log('[Login] verify-otp UI success for $maskedPhone');
+    } else {
+      FirebaseCrashlytics.instance.log('[Login] verify-otp UI failure for $maskedPhone');
+      setState(() => _error = 'رمز التحقق غير صحيح');
+    }
   }
 }

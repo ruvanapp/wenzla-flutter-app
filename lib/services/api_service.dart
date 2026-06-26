@@ -39,26 +39,35 @@ class ApiService {
     String? traceLabel,
     void Function(int statusCode)? onStatusCode,
   }) =>
-      _request(() => http.get(
-            Uri.parse('$kApiUrl$path'),
-            headers: _headers(auth: auth),
-          ), traceLabel: traceLabel, onStatusCode: onStatusCode);
+      _request(
+          () => http.get(
+                Uri.parse('$kApiUrl$path'),
+                headers: _headers(auth: auth),
+              ),
+          traceLabel: traceLabel,
+          onStatusCode: onStatusCode);
 
   Future<dynamic> post(String path, Map<String, dynamic> body,
           {bool auth = false, String? traceLabel, void Function(int statusCode)? onStatusCode}) =>
-      _request(() => http.post(
-            Uri.parse('$kApiUrl$path'),
-            headers: _headers(auth: auth),
-            body: jsonEncode(body),
-          ), traceLabel: traceLabel, onStatusCode: onStatusCode);
+      _request(
+          () => http.post(
+                Uri.parse('$kApiUrl$path'),
+                headers: _headers(auth: auth),
+                body: jsonEncode(body),
+              ),
+          traceLabel: traceLabel,
+          onStatusCode: onStatusCode);
 
   Future<dynamic> patch(String path, Map<String, dynamic> body,
           {bool auth = false, String? traceLabel, void Function(int statusCode)? onStatusCode}) =>
-      _request(() => http.patch(
-            Uri.parse('$kApiUrl$path'),
-            headers: _headers(auth: auth),
-            body: jsonEncode(body),
-          ), traceLabel: traceLabel, onStatusCode: onStatusCode);
+      _request(
+          () => http.patch(
+                Uri.parse('$kApiUrl$path'),
+                headers: _headers(auth: auth),
+                body: jsonEncode(body),
+              ),
+          traceLabel: traceLabel,
+          onStatusCode: onStatusCode);
 
   Future<dynamic> postMultipart(
     String path, {
@@ -196,11 +205,8 @@ class ApiService {
     }
   }
 
-  Future<dynamic> _retryOrNull(
-    Future<http.Response> Function() call,
-    int attempt,
-    {String? traceLabel, void Function(int statusCode)? onStatusCode}
-  ) async {
+  Future<dynamic> _retryOrNull(Future<http.Response> Function() call, int attempt,
+      {String? traceLabel, void Function(int statusCode)? onStatusCode}) async {
     if (attempt >= _kMaxAttempts - 1) {
       debugPrint('[API] All $_kMaxAttempts attempts failed — returning null.');
       return null;
@@ -249,5 +255,12 @@ class ApiService {
     if (s.startsWith('01') && s.length == 11) return '+20${s.substring(1)}';
     if (s.startsWith('1') && s.length == 10) return '+20$s';
     return s;
+  }
+
+  /// Mask a phone number for safe logging/analytics/Crashlytics.
+  /// +201553544111 → +201****111
+  static String maskPhone(String phone) {
+    if (phone.length < 7) return phone;
+    return '${phone.substring(0, 4)}****${phone.substring(phone.length - 3)}';
   }
 }

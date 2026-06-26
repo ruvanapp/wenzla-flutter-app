@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show FileSystemException, HttpException, PathNotFoundException, SocketException;
+import 'dart:io' show FileSystemException, HttpException, PathNotFoundException, Platform, SocketException;
 import 'dart:ui';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'state/app_state.dart';
 import 'theme/app_theme.dart';
@@ -34,7 +35,7 @@ Future<void> _bgHandler(RemoteMessage message) async {
   final hasRemoteNotification = message.notification != null;
   if (hasRemoteNotification) return;
   final title = message.notification?.title ?? data['title'] as String?;
-  final body  = message.notification?.body  ?? data['body']  as String?;
+  final body = message.notification?.body ?? data['body'] as String?;
   if (title == null && body == null) return;
 
   final plugin = FlutterLocalNotificationsPlugin();
@@ -61,28 +62,35 @@ Future<void> _bgHandler(RemoteMessage message) async {
   );
 }
 
+/// Returns true when the error originates from a network/image load
+/// operation — these are handled silently via errorBuilder widgets and
+/// must NOT be recorded as fatal crashes in Crashlytics.
+bool _isImageOrNetworkError(Object exception) {
+  if (exception is NetworkImageLoadException) return true;
+  if (exception is HttpException) return true;
+  if (exception is SocketException) return true;
+  if (exception is PathNotFoundException) return true;
+  if (exception is FileSystemException) return true;
+  final msg = exception.toString().toLowerCase();
+  return msg.contains('image resource service') ||
+      msg.contains('failed to load network image') ||
+      msg.contains('invalid image data') ||
+      msg.contains('http request failed') ||
+      msg.contains('pathnotfoundexception') ||
+      msg.contains('no such file or directory');
+}
+
 void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
     await Firebase.initializeApp();
 
-    // Returns true when the error originates from a network/image load
-    // operation — these are handled silently via errorBuilder widgets and
-    // must NOT be recorded as fatal crashes in Crashlytics.
-    bool isImageOrNetworkError(Object exception) {
-      if (exception is NetworkImageLoadException) return true;
-      if (exception is HttpException)             return true;
-      if (exception is SocketException)           return true;
-      if (exception is PathNotFoundException)     return true;
-      if (exception is FileSystemException)       return true;
-      final msg = exception.toString().toLowerCase();
-      return msg.contains('image resource service') ||
-             msg.contains('failed to load network image') ||
-             msg.contains('invalid image data') ||
-             msg.contains('http request failed') ||
-             msg.contains('pathnotfoundexception') ||
-             msg.contains('no such file or directory');
+    // Always enable Crashlytics collection in release/profile builds.
+    // In debug builds keep it disabled so iterative hot-reload errors
+    // do not pollute the console.
+    if (!kDebugMode) {
+      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
     }
 
     FlutterError.onError = (details) {
@@ -92,9 +100,10 @@ void main() {
         debugPrintStack(stackTrace: details.stack);
       }
       // Image / network loading failures: show placeholder, skip fatal report.
-      if (isImageOrNetworkError(details.exception)) {
+      if (_isImageOrNetworkError(details.exception)) {
         FirebaseCrashlytics.instance.recordError(
-          details.exception, details.stack,
+          details.exception,
+          details.stack,
           reason: 'image-load-error (non-fatal)',
           fatal: false,
         );
@@ -108,14 +117,16 @@ void main() {
         debugPrintStack(stackTrace: stack);
       }
       // Image / network loading failures are non-fatal.
-      final fatal = !isImageOrNetworkError(error);
+      final fatal = !_isImageOrNetworkError(error);
       FirebaseCrashlytics.instance.recordError(error, stack, fatal: fatal);
       return true;
     };
 
     try {
       await FirebaseMessaging.instance.requestPermission(
-        alert: true, badge: true, sound: true,
+        alert: true,
+        badge: true,
+        sound: true,
       );
     } catch (e) {
       debugPrint('[FCM] requestPermission failed: $e');
@@ -154,10 +165,31 @@ void main() {
       );
     });
 
+    // Set static Crashlytics keys as early as possible.
+    await _setCrashlyticsStaticKeys();
+
     runApp(const SouqAlAsalApp());
   }, (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
   });
+}
+
+/// Sets keys that do not change during the session (app version, build, etc).
+/// User-specific keys are updated from [AppState] after login.
+Future<void> _setCrashlyticsStaticKeys() async {
+  try {
+    final info = await PackageInfo.fromPlatform();
+    final crashlytics = FirebaseCrashlytics.instance;
+    await crashlytics.setCustomKey('appVersion', info.version);
+    await crashlytics.setCustomKey('buildNumber', info.buildNumber);
+    if (Platform.isAndroid) {
+      await crashlytics.setCustomKey('platform', 'android');
+    } else if (Platform.isIOS) {
+      await crashlytics.setCustomKey('platform', 'ios');
+    }
+  } catch (e) {
+    debugPrint('[Crashlytics] Failed to set static keys: $e');
+  }
 }
 
 class SouqAlAsalApp extends StatelessWidget {
@@ -169,9 +201,9 @@ class SouqAlAsalApp extends StatelessWidget {
       create: (_) => AppState()..initAuth()..loadCart(),
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        title:   'سوق العسل',
-        theme:   AppTheme.light,
-        locale:  const Locale('ar', 'EG'),
+        title: 'سوق العسل',
+        theme: AppTheme.light,
+        locale: const Locale('ar', 'EG'),
         builder: (context, child) => Directionality(
           textDirection: TextDirection.rtl,
           child: child!,
@@ -184,7 +216,8 @@ class SouqAlAsalApp extends StatelessWidget {
 
 class _AppRoot extends StatefulWidget {
   const _AppRoot();
-  @override State<_AppRoot> createState() => _AppRootState();
+  @override
+  State<_AppRoot> createState() => _AppRootState();
 }
 
 class _AppRootState extends State<_AppRoot> {
@@ -193,6 +226,30 @@ class _AppRootState extends State<_AppRoot> {
     super.initState();
     _registerFcm();
     _setupNotificationTapHandlers();
+    _attachAppStateListeners();
+  }
+
+  void _attachAppStateListeners() {
+    final state = context.read<AppState>();
+    state.addListener(_onAppStateChanged);
+    _syncCrashlyticsUserKeys(state);
+  }
+
+  void _onAppStateChanged() {
+    _syncCrashlyticsUserKeys(context.read<AppState>());
+  }
+
+  Future<void> _syncCrashlyticsUserKeys(AppState state) async {
+    try {
+      final crashlytics = FirebaseCrashlytics.instance;
+      final userId = state.user?['id']?.toString();
+      if (userId != null && userId.isNotEmpty) {
+        await crashlytics.setUserIdentifier(userId);
+        await crashlytics.setCustomKey('userId', userId);
+      }
+    } catch (e) {
+      debugPrint('[Crashlytics] Failed to sync user keys: $e');
+    }
   }
 
   Future<void> _registerFcm() async {
@@ -209,7 +266,8 @@ class _AppRootState extends State<_AppRoot> {
     } catch (e, stack) {
       debugPrint('[FCM] token registration failed: $e');
       FirebaseCrashlytics.instance.recordError(
-        e, stack,
+        e,
+        stack,
         reason: 'FCM getToken failed (MISSING_INSTANCEID_SERVICE or timeout)',
         fatal: false,
       );
@@ -228,17 +286,24 @@ class _AppRootState extends State<_AppRoot> {
   }
 
   void _handleTap(RemoteMessage msg) {
-    final type    = msg.data['type']    as String? ?? '';
+    final type = msg.data['type'] as String? ?? '';
     final orderId = msg.data['orderId'] as String?;
 
     const orderTypes = {
-      'order_update', 'order_placed', 'order_confirmed',
-      'order_shipped', 'order_delivered', 'order_cancelled',
+      'order_update',
+      'order_placed',
+      'order_confirmed',
+      'order_shipped',
+      'order_delivered',
+      'order_cancelled',
     };
 
     if (orderTypes.contains(type)) {
       final state = context.read<AppState>();
-      if (orderId != null) state.setPendingOpenOrderId(orderId);
+      if (orderId != null) {
+        state.setPendingOpenOrderId(orderId);
+        FirebaseCrashlytics.instance.setCustomKey('pendingOpenOrderId', orderId);
+      }
       state.showScreen(AppScreen.orders, bottomIndex: 1);
     }
   }

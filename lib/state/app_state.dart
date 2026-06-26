@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
 import '../services/home_cache_service.dart';
@@ -29,42 +30,167 @@ class CheckoutError {
 
 class AppState extends ChangeNotifier {
   // ── Navigation ───────────────────────────────────────────────────────────────
-  AppScreen _screen            = AppScreen.home;
-  int       _bottomIndex       = 0;
-  int       _previousBottomIndex = 0; // saved tab before opening store/product
+  AppScreen _screen = AppScreen.home;
+  int _bottomIndex = 0;
+  int _previousBottomIndex = 0; // saved tab before opening store/product
 
-  AppScreen get screen       => _screen;
-  int       get bottomIndex  => _bottomIndex;
-  bool      get isAtRoot     => _screen == AppScreen.home && _bottomIndex == 0;
+  AppScreen get screen => _screen;
+  int get bottomIndex => _bottomIndex;
+  bool get isAtRoot => _screen == AppScreen.home && _bottomIndex == 0;
 
   void showScreen(AppScreen s, {int? bottomIndex}) {
-    _screen      = s;
+    _screen = s;
     if (bottomIndex != null) _bottomIndex = bottomIndex;
     notifyListeners();
   }
 
   void popToMain() {
-    _selectedProduct   = null;
-    _selectedStoreId   = null;
-    _screen            = AppScreen.home;
-    _bottomIndex       = 0;
+    _selectedProduct = null;
+    _selectedStoreId = null;
+    _screen = AppScreen.home;
+    _bottomIndex = 0;
     notifyListeners();
   }
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
-  String?               _token;
+  String? _token;
   Map<String, dynamic>? _user;
-  bool                  _checkoutSessionExpired = false;
-  CheckoutError?        _lastCheckoutError;
-  PackageInfo?          _cachedPackageInfo;
+  bool _checkoutSessionExpired = false;
+  CheckoutError? _lastCheckoutError;
+  PackageInfo? _cachedPackageInfo;
 
-  String?               get token => _token;
-  Map<String, dynamic>? get user  => _user;
-  bool                  get isLoggedIn => _token != null;
-  CheckoutError?        get lastCheckoutError => _lastCheckoutError;
+  // ── App Update Check ──────────────────────────────────────────────────────
+  Map<String, dynamic>? _updateConfig;
+  String? _updateAction; // null | 'force' | 'optional'
+
+  /// The resolved update action after checking version: null (no update),
+  /// 'force' (must update), or 'optional' (can dismiss).
+  String? get updateAction => _updateAction;
+  Map<String, dynamic>? get updateConfig => _updateConfig;
+
+  /// Version string for display (e.g. "1.0.20 (20)")
+  /// Uses parentheses instead of + to avoid RTL bidi text reversal.
+  String get appVersionDisplay {
+    final pi = _cachedPackageInfo;
+    if (pi == null) return '';
+    return '${pi.version} (${pi.buildNumber})';
+  }
+
+  /// Semantic version string only (e.g. "1.0.23")
+  String get appVersionString => _cachedPackageInfo?.version ?? '';
+
+  /// Check for available app updates from the backend.
+  /// Safe: silently fails on network errors and falls back to cached config.
+  Future<void> checkAppUpdate() async {
+    try {
+      final pkg = await _getPackageInfo();
+      final api = ApiService(token: _token);
+
+      Map<String, dynamic>? config;
+      try {
+        final res = await api.get('/customer/app-version', traceLabel: 'app-version-check');
+        if (res is Map<String, dynamic>) {
+          config = res;
+          // Cache successful response
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('cached_app_version_config', jsonEncode(config));
+          debugPrint('[AppUpdate] fetched config: enabled=${config['enabled']}, '
+              'type=${config['update_type']}, min=${config['minimum_app_version']}, '
+              'latest=${config['latest_app_version']}');
+        }
+      } catch (e) {
+        debugPrint('[AppUpdate] API failed, trying cache: $e');
+        // Fall back to cached config
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString('cached_app_version_config');
+        if (cached != null) {
+          try {
+            config = jsonDecode(cached) as Map<String, dynamic>;
+            debugPrint('[AppUpdate] using cached config');
+          } catch (_) {}
+        }
+      }
+
+      if (config == null) {
+        debugPrint('[AppUpdate] no config available, skipping check');
+        return;
+      }
+
+      _updateConfig = config;
+
+      final enabled = config['enabled'] == true;
+      final updateType = config['update_type']?.toString() ?? 'disabled';
+
+      if (!enabled || updateType == 'disabled') {
+        _updateAction = null;
+        debugPrint('[AppUpdate] disabled, no update prompt');
+        return;
+      }
+
+      final currentVersion = pkg.version;
+      final minimumVersion = config['minimum_app_version']?.toString() ?? '0.0.0';
+      final latestVersion = config['latest_app_version']?.toString() ?? '0.0.0';
+
+      // Force update: current < minimum
+      if (_isVersionLower(currentVersion, minimumVersion)) {
+        _updateAction = 'force';
+        debugPrint('[AppUpdate] FORCE update: $currentVersion < $minimumVersion');
+        notifyListeners();
+        return;
+      }
+
+      // Optional update: current < latest and type is optional
+      if (updateType == 'optional' && _isVersionLower(currentVersion, latestVersion)) {
+        _updateAction = 'optional';
+        debugPrint('[AppUpdate] OPTIONAL update: $currentVersion < $latestVersion');
+        notifyListeners();
+        return;
+      }
+
+      // Force type but above minimum — still force if below latest
+      if (updateType == 'force' && _isVersionLower(currentVersion, latestVersion)) {
+        _updateAction = 'force';
+        debugPrint('[AppUpdate] FORCE (type=force, below latest): $currentVersion < $latestVersion');
+        notifyListeners();
+        return;
+      }
+
+      _updateAction = null;
+      debugPrint('[AppUpdate] app is up to date ($currentVersion >= $latestVersion)');
+    } catch (e) {
+      debugPrint('[AppUpdate] unexpected error: $e');
+      _updateAction = null;
+    }
+  }
+
+  /// Dismiss optional update prompt.
+  void dismissUpdatePrompt() {
+    _updateAction = null;
+    notifyListeners();
+  }
+
+  /// Compare semantic version strings. Returns true if a < b.
+  static bool _isVersionLower(String a, String b) {
+    final aParts = a.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+    final bParts = b.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+    // Pad to same length
+    while (aParts.length < 3) aParts.add(0);
+    while (bParts.length < 3) bParts.add(0);
+    for (int i = 0; i < 3; i++) {
+      if (aParts[i] < bParts[i]) return true;
+      if (aParts[i] > bParts[i]) return false;
+    }
+    return false; // equal
+  }
+
+  String? get token => _token;
+  Map<String, dynamic>? get user => _user;
+  bool get isLoggedIn => _token != null;
+  CheckoutError? get lastCheckoutError => _lastCheckoutError;
   void consumeLastCheckoutError() {
     _lastCheckoutError = null;
   }
+
   double get walletBalance {
     final raw = _user?['walletBalance'];
     if (raw == null) return 0.0;
@@ -74,7 +200,9 @@ class AppState extends ChangeNotifier {
   Future<void> initAuth() async {
     final saved = await StorageService.loadAuth();
     _token = saved.token;
-    _user  = saved.user;
+    _user = saved.user;
+    // Pre-load PackageInfo so appVersionDisplay is available early
+    _getPackageInfo().then((_) => notifyListeners());
     notifyListeners();
     if (isLoggedIn) {
       await refreshProfile(silent: true);
@@ -90,53 +218,99 @@ class AppState extends ChangeNotifier {
 
   Future<bool> sendOtp(String phone) async {
     _lastOtpError = null;
+    final crashlytics = FirebaseCrashlytics.instance;
+    final norm = ApiService.normalisePhone(phone);
+    crashlytics.log('[OTP] Request send-otp for ${ApiService.maskPhone(norm)}');
     try {
-      final api  = ApiService(token: _token);
-      final norm = ApiService.normalisePhone(phone);
+      final api = ApiService(token: _token);
       int statusCode = 0;
-      final res = await api.post('/auth/customer/send-otp', {'phone': norm},
-          onStatusCode: (code) => statusCode = code);
+      final res = await api.post('/auth/customer/send-otp', {'phone': norm}, onStatusCode: (code) => statusCode = code);
       if (statusCode == 429) {
         _lastOtpError = (res is Map && res['message'] is String)
             ? res['message'] as String
             : 'تم تجاوز الحد المسموح لإرسال رمز التحقق. حاول لاحقاً.';
+        crashlytics.log('[OTP] Rate limited for ${ApiService.maskPhone(norm)}');
         return false;
       }
-      return res != null;
-    } catch (_) {
+      if (res != null) {
+        crashlytics.log('[OTP] send-otp succeeded for ${ApiService.maskPhone(norm)}');
+        return true;
+      }
+      crashlytics.log('[OTP] send-otp returned null for ${ApiService.maskPhone(norm)}');
+      return false;
+    } catch (e, stack) {
+      crashlytics.recordError(
+        e,
+        stack,
+        reason: 'sendOtp failed',
+        fatal: false,
+      );
       return false;
     }
   }
 
   Future<bool> verifyOtp(String phone, String otp, {String? referralCode}) async {
+    final crashlytics = FirebaseCrashlytics.instance;
+    final norm = ApiService.normalisePhone(phone);
+    crashlytics.log('[OTP] Request verify-otp for ${ApiService.maskPhone(norm)}');
     try {
-      final api  = ApiService(token: _token);
-      final norm = ApiService.normalisePhone(phone);
+      final api = ApiService(token: _token);
       final body = <String, dynamic>{'phone': norm, 'code': otp};
       if (referralCode != null && referralCode.trim().isNotEmpty) {
         body['referralCode'] = referralCode.trim().toUpperCase();
       }
-      final res  = await api.post('/auth/customer/verify-otp', body);
+      final res = await api.post('/auth/customer/verify-otp', body);
       if (res is Map && res['token'] != null) {
         _token = res['token'] as String;
-        _user  = res['user']  as Map<String, dynamic>?;
+        _user = res['user'] as Map<String, dynamic>?;
         await StorageService.saveAuth(_token!, _user ?? {});
         await refreshProfile(silent: true);
+        await _setCrashlyticsUserKeys();
         notifyListeners();
         // Flush any FCM token that arrived before login completed
         unawaited(_flushFcmToken());
         unawaited(AnalyticsService.instance.logCompleteRegistration());
+        crashlytics.log('[OTP] verify-otp succeeded for ${ApiService.maskPhone(norm)}');
         return true;
       }
+      crashlytics.log('[OTP] verify-otp returned no token for ${ApiService.maskPhone(norm)}');
       return false;
-    } catch (_) {
+    } catch (e, stack) {
+      crashlytics.recordError(
+        e,
+        stack,
+        reason: 'verifyOtp failed',
+        fatal: false,
+      );
       return false;
+    }
+  }
+
+  /// Sync Crashlytics keys that depend on the logged-in user.
+  Future<void> _setCrashlyticsUserKeys() async {
+    try {
+      final crashlytics = FirebaseCrashlytics.instance;
+      final userId = _user?['id']?.toString();
+      if (userId != null && userId.isNotEmpty) {
+        await crashlytics.setUserIdentifier(userId);
+        await crashlytics.setCustomKey('userId', userId);
+      }
+      final name = _user?['name']?.toString();
+      if (name != null && name.isNotEmpty) {
+        await crashlytics.setCustomKey('userName', name);
+      }
+      final phone = _user?['phone']?.toString();
+      if (phone != null && phone.isNotEmpty) {
+        await crashlytics.setCustomKey('userPhone', ApiService.maskPhone(phone));
+      }
+    } catch (e) {
+      debugPrint('[Crashlytics] Failed to set user keys: $e');
     }
   }
 
   Future<void> logout() async {
     _token = null;
-    _user  = null;
+    _user = null;
     _orders = [];
     _checkoutSessionExpired = false;
     await StorageService.clearAuth();
@@ -165,8 +339,8 @@ class AppState extends ChangeNotifier {
   /// Called by main.dart whenever Firebase provides/refreshes a token.
   /// Caches the token and sends it to the backend if already logged in.
   Future<void> updateFcmToken(String fcmToken) async {
-    _pendingFcmToken = fcmToken;   // always cache
-    if (!isLoggedIn) return;       // will be flushed after login / auth restore
+    _pendingFcmToken = fcmToken; // always cache
+    if (!isLoggedIn) return; // will be flushed after login / auth restore
     await _flushFcmToken();
   }
 
@@ -215,13 +389,13 @@ class AppState extends ChangeNotifier {
   }
 
   // ── Stores ───────────────────────────────────────────────────────────────────
-  List<dynamic> _stores        = [];
-  List<dynamic> _categories    = [];
-  bool          _loadingStores = false;
+  List<dynamic> _stores = [];
+  List<dynamic> _categories = [];
+  bool _loadingStores = false;
 
-  List<dynamic> get stores        => _stores;
-  List<dynamic> get categories    => _categories;
-  bool          get loadingStores => _loadingStores;
+  List<dynamic> get stores => _stores;
+  List<dynamic> get categories => _categories;
+  bool get loadingStores => _loadingStores;
 
   Future<void> loadStores() async {
     if (_loadingStores) return;
@@ -273,20 +447,28 @@ class AppState extends ChangeNotifier {
   }
 
   // ── Home CMS ─────────────────────────────────────────────────────────────────
-  List<dynamic> _homeBanners       = [];
-  List<dynamic> _homePromotions    = [];
-  List<dynamic> _homeSections      = [];
+  List<dynamic> _homeBanners = [];
+  List<dynamic> _homePromotions = [];
+  List<dynamic> _homeSections = [];
   List<dynamic> _homeCmsCategories = [];
-  List<dynamic> _featuredStores    = [];
-  bool          _cmsLoading        = false;
+  List<dynamic> _featuredStores = [];
+  List<dynamic> _featuredProducts = [];
+  List<dynamic> _bestSellers = [];
+  List<dynamic> _newArrivals = [];
+  bool _cmsLoading = false;
+  bool _productsLoading = false;
   Map<String, dynamic>? _homePromoCard;
 
-  List<dynamic> get homeBanners       => _homeBanners;
-  List<dynamic> get homePromotions    => _homePromotions;
-  List<dynamic> get homeSections      => _homeSections;
+  List<dynamic> get homeBanners => _homeBanners;
+  List<dynamic> get homePromotions => _homePromotions;
+  List<dynamic> get homeSections => _homeSections;
   List<dynamic> get homeCmsCategories => _homeCmsCategories;
-  List<dynamic> get featuredStores    => _featuredStores;
-  bool          get cmsLoading        => _cmsLoading;
+  List<dynamic> get featuredStores => _featuredStores;
+  List<dynamic> get featuredProducts => _featuredProducts;
+  List<dynamic> get bestSellers => _bestSellers;
+  List<dynamic> get newArrivals => _newArrivals;
+  bool get cmsLoading => _cmsLoading;
+  bool get productsLoading => _productsLoading;
   Map<String, dynamic>? get homePromoCard => _homePromoCard;
 
   Future<void> loadHomePromoCard() async {
@@ -297,13 +479,17 @@ class AppState extends ChangeNotifier {
         _homePromoCard = res;
         notifyListeners();
       }
-    } catch (_) { /* keep silent — card stays null and is hidden */ }
+    } catch (_) {/* keep silent — card stays null and is hidden */}
   }
 
   /// Whether the CMS has categories configured (to decide fallback vs CMS rendering)
   bool get hasCmsCategories => _homeCmsCategories.isNotEmpty;
+
   /// Whether the CMS has featured stores configured
   bool get hasFeaturedStores => _featuredStores.isNotEmpty;
+
+  /// Whether the CMS has featured products configured
+  bool get hasFeaturedProducts => _featuredProducts.isNotEmpty;
 
   Future<void> loadHomeCms({bool force = false}) async {
     // Skip re-fetch if data is already loaded, unless forced (e.g. pull-to-refresh)
@@ -313,11 +499,12 @@ class AppState extends ChangeNotifier {
     if (_homeBanners.isEmpty) {
       final cached = await HomeCacheService.loadCms();
       if (cached != null) {
-        _homeBanners       = cached['banners']        is List ? List.from(cached['banners'])        : [];
-        _homePromotions    = cached['promotions']     is List ? List.from(cached['promotions'])     : [];
-        _homeSections      = cached['sections']       is List ? List.from(cached['sections'])       : [];
-        _homeCmsCategories = cached['categories']     is List ? List.from(cached['categories'])     : [];
-        _featuredStores    = cached['featuredStores'] is List ? List.from(cached['featuredStores']) : [];
+        _homeBanners = cached['banners'] is List ? List.from(cached['banners']) : [];
+        _homePromotions = cached['promotions'] is List ? List.from(cached['promotions']) : [];
+        _homeSections = cached['sections'] is List ? List.from(cached['sections']) : [];
+        _homeCmsCategories = cached['categories'] is List ? List.from(cached['categories']) : [];
+        _featuredStores = cached['featuredStores'] is List ? List.from(cached['featuredStores']) : [];
+        _featuredProducts = cached['featuredProducts'] is List ? List.from(cached['featuredProducts']) : [];
         if (_homeBanners.isNotEmpty || _homeCmsCategories.isNotEmpty) {
           notifyListeners();
         }
@@ -331,11 +518,12 @@ class AppState extends ChangeNotifier {
       final api = ApiService(token: _token);
       final res = await api.get('/home-cms/public');
       if (res is Map) {
-        _homeBanners       = res['banners']        is List ? List.from(res['banners'])        : [];
-        _homePromotions    = res['promotions']     is List ? List.from(res['promotions'])     : [];
-        _homeSections      = res['sections']       is List ? List.from(res['sections'])       : [];
-        _homeCmsCategories = res['categories']     is List ? List.from(res['categories'])     : [];
-        _featuredStores    = res['featuredStores'] is List ? List.from(res['featuredStores']) : [];
+        _homeBanners = res['banners'] is List ? List.from(res['banners']) : [];
+        _homePromotions = res['promotions'] is List ? List.from(res['promotions']) : [];
+        _homeSections = res['sections'] is List ? List.from(res['sections']) : [];
+        _homeCmsCategories = res['categories'] is List ? List.from(res['categories']) : [];
+        _featuredStores = res['featuredStores'] is List ? List.from(res['featuredStores']) : [];
+        _featuredProducts = res['featuredProducts'] is List ? List.from(res['featuredProducts']) : [];
         // Save to disk cache
         unawaited(HomeCacheService.saveCms(Map<String, dynamic>.from(res)));
       }
@@ -347,95 +535,188 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  // ── Store Detail ─────────────────────────────────────────────────────────────
-  String?               _selectedStoreId;
-  Map<String, dynamic>? _selectedStore;
-  List<dynamic>         _storeProducts = [];
-  List<dynamic>         _storeReviews  = [];
-  bool                  _loadingStore  = false;
-
-  String?               get selectedStoreId => _selectedStoreId;
-  Map<String, dynamic>? get selectedStore   => _selectedStore;
-  List<dynamic>         get storeProducts   => _storeProducts;
-  List<dynamic>         get storeReviews    => _storeReviews;
-  bool                  get loadingStore    => _loadingStore;
-
-  Future<void> openStore(String storeId) async {
-    _previousBottomIndex = _bottomIndex;
-    _selectedStoreId = storeId;
-    _selectedStore   = null;
-    _storeProducts   = [];
-    _storeReviews    = [];
-    _loadingStore    = true;
-    showScreen(AppScreen.storeDetail);
+  /// Load best-selling and newly-arrived products for home screen sections
+  Future<void> loadHomeProducts({bool force = false}) async {
+    if (!force && _bestSellers.isNotEmpty) return;
+    _productsLoading = true;
     try {
       final api = ApiService(token: _token);
-      final res = await api.get('/customer/stores/$storeId');
-      debugPrint('[openStore] storeId=$storeId responseType=${res.runtimeType}');
-      if (res is Map) {
-        _selectedStore  = Map<String, dynamic>.from(res);
-        _storeProducts  = res['products'] is List ? List.from(res['products']) : [];
-        _storeReviews   = res['reviews']  is List ? List.from(res['reviews'])  : [];
-        debugPrint('[openStore] selectedStore keys=${_selectedStore?.keys.toList()} products=${_storeProducts.length} reviews=${_storeReviews.length}');
-      } else {
-        _screen = _bottomIndexToScreen(_previousBottomIndex);
-      }
+      final results = await Future.wait([
+        api.get('/customer/products/best-sellers'),
+        api.get('/customer/products/new-arrivals'),
+      ]);
+      _bestSellers = results[0] is List ? List.from(results[0]) : [];
+      _newArrivals = results[1] is List ? List.from(results[1]) : [];
     } catch (_) {
-      _screen = _bottomIndexToScreen(_previousBottomIndex);
+      // silently fail — sections will be hidden if empty
     } finally {
-      _loadingStore = false;
+      _productsLoading = false;
       notifyListeners();
     }
+  }
+
+  // ── Store Detail ─────────────────────────────────────────────────────────────
+  String? _selectedStoreId;
+  Map<String, dynamic>? _selectedStore;
+  List<dynamic> _storeProducts = [];
+  List<dynamic> _storeReviews = [];
+  bool _loadingStore = false;
+
+  /// In-memory cache: storeId → {store, products, reviews, ts}
+  /// Avoids re-fetching when re-opening a recently visited store.
+  static const _storeCacheTtl = Duration(minutes: 5);
+  final Map<String, Map<String, dynamic>> _storeCache = {};
+
+  String? get selectedStoreId => _selectedStoreId;
+  Map<String, dynamic>? get selectedStore => _selectedStore;
+  List<dynamic> get storeProducts => _storeProducts;
+  List<dynamic> get storeReviews => _storeReviews;
+  bool get loadingStore => _loadingStore;
+
+  Future<void> openStore(String storeId) async {
+    final crashlytics = FirebaseCrashlytics.instance;
+    crashlytics.log('[Store] openStore storeId=$storeId');
+    crashlytics.setCustomKey('storeId', storeId);
+    _previousBottomIndex = _bottomIndex;
+    _selectedStoreId = storeId;
+
+    // ── Try cache first ─────────────────────────────────────────────────
+    final cached = _storeCache[storeId];
+    final cacheValid = cached != null &&
+        DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(cached['ts'] as int)) < _storeCacheTtl;
+
+    if (cacheValid) {
+      _selectedStore = Map<String, dynamic>.from(cached['store'] as Map);
+      _storeProducts = List.from(cached['products'] as List);
+      _storeReviews = List.from(cached['reviews'] as List);
+      _loadingStore = false;
+      showScreen(AppScreen.storeDetail);
+      _refreshStoreInBackground(storeId);
+      return;
+    }
+
+    _selectedStore = null;
+    _storeProducts = [];
+    _storeReviews = [];
+    _loadingStore = true;
+    showScreen(AppScreen.storeDetail);
+    await _fetchAndCacheStore(storeId);
   }
 
   Future<bool> openStoreWithData(Map<String, dynamic> store) async {
     final storeId = (store['id'] as String?)?.trim();
     if (storeId == null || storeId.isEmpty) return false;
 
+    final crashlytics = FirebaseCrashlytics.instance;
+    crashlytics.log('[Store] openStoreWithData storeId=$storeId');
+    crashlytics.setCustomKey('storeId', storeId);
     _previousBottomIndex = _bottomIndex;
     _selectedStoreId = storeId;
+
+    // ── Try cache first ─────────────────────────────────────────────────
+    final cached = _storeCache[storeId];
+    final cacheValid = cached != null &&
+        DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(cached['ts'] as int)) < _storeCacheTtl;
+
+    if (cacheValid) {
+      _selectedStore = Map<String, dynamic>.from(cached['store'] as Map);
+      _storeProducts = List.from(cached['products'] as List);
+      _storeReviews = List.from(cached['reviews'] as List);
+      _loadingStore = false;
+      showScreen(AppScreen.storeDetail);
+      _refreshStoreInBackground(storeId);
+      return true;
+    }
+
+    // Show partial store data immediately (header visible right away)
     _selectedStore = Map<String, dynamic>.from(store);
     _storeProducts = store['products'] is List ? List.from(store['products']) : [];
     _storeReviews = store['reviews'] is List ? List.from(store['reviews']) : [];
     _loadingStore = true;
     showScreen(AppScreen.storeDetail);
 
+    await _fetchAndCacheStore(storeId);
+    return _selectedStore != null;
+  }
+
+  /// Fetch store data from API and update cache + state.
+  Future<void> _fetchAndCacheStore(String storeId) async {
+    final crashlytics = FirebaseCrashlytics.instance;
+    crashlytics.log('[Store] _fetchAndCacheStore storeId=$storeId');
     try {
       final api = ApiService(token: _token);
       final res = await api.get('/customer/stores/$storeId');
-      debugPrint('[openStoreWithData] storeId=$storeId responseType=${res.runtimeType}');
       if (res is Map) {
         _selectedStore = Map<String, dynamic>.from(res);
-        _storeProducts = res['products'] is List ? List.from(res['products']) : _storeProducts;
-        _storeReviews = res['reviews'] is List ? List.from(res['reviews']) : _storeReviews;
-        return true;
+        _storeProducts = res['products'] is List ? List.from(res['products']) : [];
+        _storeReviews = res['reviews'] is List ? List.from(res['reviews']) : [];
+        _storeCache[storeId] = {
+          'store': Map<String, dynamic>.from(res),
+          'products': List.from(_storeProducts),
+          'reviews': List.from(_storeReviews),
+          'ts': DateTime.now().millisecondsSinceEpoch,
+        };
+        crashlytics.log('[Store] _fetchAndCacheStore loaded ${storeProducts.length} products');
+      } else if (_selectedStore == null) {
+        _screen = _bottomIndexToScreen(_previousBottomIndex);
       }
-      return true;
-    } catch (_) {
-      return _selectedStore != null;
+    } catch (e, stack) {
+      crashlytics.recordError(e, stack,
+          reason: '_fetchAndCacheStore failed storeId=$storeId', fatal: false);
+      if (_selectedStore == null) {
+        _screen = _bottomIndexToScreen(_previousBottomIndex);
+      }
     } finally {
       _loadingStore = false;
       notifyListeners();
     }
   }
 
+  /// Silently refresh store data in background (stale-while-revalidate).
+  void _refreshStoreInBackground(String storeId) {
+    unawaited(() async {
+      try {
+        final api = ApiService(token: _token);
+        final res = await api.get('/customer/stores/$storeId');
+        if (res is Map && _selectedStoreId == storeId) {
+          _selectedStore = Map<String, dynamic>.from(res);
+          _storeProducts = res['products'] is List ? List.from(res['products']) : _storeProducts;
+          _storeReviews = res['reviews'] is List ? List.from(res['reviews']) : _storeReviews;
+          _storeCache[storeId] = {
+            'store': Map<String, dynamic>.from(res),
+            'products': List.from(_storeProducts),
+            'reviews': List.from(_storeReviews),
+            'ts': DateTime.now().millisecondsSinceEpoch,
+          };
+          notifyListeners();
+        }
+      } catch (_) {
+        // Silent — cached data still displayed
+      }
+    }());
+  }
+
   /// Back-navigate out of a store — restores the tab that was active before openStore().
   void closeStore() {
     _selectedStoreId = null;
-    _selectedStore   = null;
-    _storeProducts   = [];
-    _storeReviews    = [];
-    _screen      = _bottomIndexToScreen(_previousBottomIndex);
+    _selectedStore = null;
+    _storeProducts = [];
+    _storeReviews = [];
+    _screen = _bottomIndexToScreen(_previousBottomIndex);
     _bottomIndex = _previousBottomIndex;
     notifyListeners();
   }
 
   AppScreen _bottomIndexToScreen(int i) {
     switch (i) {
-      case 1:  return AppScreen.orders;
-      case 2:  return AppScreen.cart;
-      case 3:  return AppScreen.login;
-      default: return AppScreen.home;
+      case 1:
+        return AppScreen.orders;
+      case 2:
+        return AppScreen.cart;
+      case 3:
+        return AppScreen.login;
+      default:
+        return AppScreen.home;
     }
   }
 
@@ -493,11 +774,11 @@ class AppState extends ChangeNotifier {
 
   // ── Cart ──────────────────────────────────────────────────────────────────────
   List<dynamic> _cart = [];
-  List<dynamic> get cart     => _cart;
-  int           get cartCount => _cart.fold<int>(0, (s, i) {
-    final q = i['qty'];
-    return s + (q is int ? q : (q is num ? q.toInt() : 1));
-  });
+  List<dynamic> get cart => _cart;
+  int get cartCount => _cart.fold<int>(0, (s, i) {
+        final q = i['qty'];
+        return s + (q is int ? q : (q is num ? q.toInt() : 1));
+      });
 
   Future<void> loadCart() async {
     try {
@@ -527,16 +808,13 @@ class AppState extends ChangeNotifier {
 
   // ── Single-store cart helper ──────────────────────────────────────────────
   /// Returns the merchantId of the first item currently in the cart, or null.
-  String? get cartMerchantId =>
-      _cart.isEmpty ? null : (_cart.first['merchantId'] as String?);
+  String? get cartMerchantId => _cart.isEmpty ? null : (_cart.first['merchantId'] as String?);
 
   /// Returns the store name from the first cart item, for display in CartStoreHeader.
-  String get cartStoreName =>
-      _cart.isEmpty ? '' : (_cart.first['storeName'] as String? ?? '');
+  String get cartStoreName => _cart.isEmpty ? '' : (_cart.first['storeName'] as String? ?? '');
 
   /// Returns the store logo URL from the first cart item, for display in CartStoreHeader.
-  String? get cartStoreLogoUrl =>
-      _cart.isEmpty ? null : (_cart.first['storeLogoUrl'] as String?);
+  String? get cartStoreLogoUrl => _cart.isEmpty ? null : (_cart.first['storeLogoUrl'] as String?);
 
   /// Adds [product] to the cart.
   /// Returns [true] if the item was added/incremented.
@@ -566,11 +844,21 @@ class AppState extends ChangeNotifier {
   }
 
   bool addToCart(Map<String, dynamic> product, {int qty = 1}) {
+    final crashlytics = FirebaseCrashlytics.instance;
+    final productId = (product['id'] ?? '') as String;
+    final productName = (product['name'] ?? '') as String;
+    final merchantId = product['merchantId'] as String?;
+    crashlytics.log('[Cart] addToCart productId=$productId merchantId=$merchantId qty=$qty');
+    if (merchantId != null && merchantId.isNotEmpty) {
+      crashlytics.setCustomKey('storeId', merchantId);
+    }
+
     // ── Single-store enforcement ──────────────────────────────────────────
     if (_cart.isNotEmpty) {
-      final existing  = cartMerchantId;
-      final incoming  = product['merchantId'] as String?;
+      final existing = cartMerchantId;
+      final incoming = merchantId;
       if (existing != null && incoming != null && existing != incoming) {
+        crashlytics.log('[Cart] addToCart blocked — different store');
         return false; // blocked — caller must show the Arabic error snackbar
       }
     }
@@ -588,10 +876,11 @@ class AppState extends ChangeNotifier {
     _saveCart();
     notifyListeners();
     unawaited(AnalyticsService.instance.logAddToCart(
-      productId: (product['id'] ?? '') as String,
-      productName: (product['name'] ?? '') as String,
+      productId: productId,
+      productName: productName,
       price: ((product['price'] is num ? product['price'] : 0) as num).toDouble(),
     ));
+    crashlytics.log('[Cart] addToCart succeeded productId=$productId');
     return true;
   }
 
@@ -608,7 +897,10 @@ class AppState extends ChangeNotifier {
   }
 
   void updateCartQty(String productId, int qty) {
-    if (qty <= 0) { removeFromCart(productId); return; }
+    if (qty <= 0) {
+      removeFromCart(productId);
+      return;
+    }
     final idx = _cart.indexWhere((i) => (i as Map)['id'] == productId);
     if (idx >= 0) {
       final cur = _normalizeCartItem(Map<String, dynamic>.from(_cart[idx] as Map));
@@ -619,9 +911,9 @@ class AppState extends ChangeNotifier {
   }
 
   double get cartTotal => _cart.fold(
-    0.0,
-    (s, i) => s + (double.tryParse(i['price']?.toString() ?? '0') ?? 0) * ((i['qty'] as int?) ?? 1),
-  );
+        0.0,
+        (s, i) => s + (double.tryParse(i['price']?.toString() ?? '0') ?? 0) * ((i['qty'] as int?) ?? 1),
+      );
 
   // ── Selected shipping zone (synced from checkout sheet) ─────────────────────
   String? _selectedShippingZoneId;
@@ -672,8 +964,7 @@ class AppState extends ChangeNotifier {
         msg.contains('نفذت');
   }
 
-  String _truncateForLog(String s, int max) =>
-      s.length <= max ? s : '${s.substring(0, max)}…(truncated)';
+  String _truncateForLog(String s, int max) => s.length <= max ? s : '${s.substring(0, max)}…(truncated)';
 
   Future<PackageInfo> _getPackageInfo() async {
     return _cachedPackageInfo ??= await PackageInfo.fromPlatform();
@@ -687,8 +978,7 @@ class AppState extends ChangeNotifier {
   }) async {
     try {
       final pkg = await _getPackageInfo();
-      final bodyStr =
-          _truncateForLog(jsonEncode(responseBody ?? const {}), 1024);
+      final bodyStr = _truncateForLog(jsonEncode(responseBody ?? const {}), 1024);
       await FirebaseCrashlytics.instance.recordError(
         Exception('checkout_${kind.name}_${statusCode ?? 'no_status'}'),
         StackTrace.current,
@@ -698,8 +988,7 @@ class AppState extends ChangeNotifier {
           DiagnosticsProperty<int?>('statusCode', statusCode),
           DiagnosticsProperty<String>('responseBody', bodyStr),
           DiagnosticsProperty<String?>('userId', _user?['id'] as String?),
-          DiagnosticsProperty<String>(
-              'appVersion', '${pkg.version}+${pkg.buildNumber}'),
+          DiagnosticsProperty<String>('appVersion', '${pkg.version}+${pkg.buildNumber}'),
           DiagnosticsProperty<String>('shippingZoneId', shippingZoneId),
           DiagnosticsProperty<int>('cartItemCount', _cart.length),
           DiagnosticsProperty<double>('cartTotal', cartTotal),
@@ -724,12 +1013,16 @@ class AppState extends ChangeNotifier {
   }) async {
     const traceLabel = 'CHECKOUT';
     final stopwatch = Stopwatch()..start();
+    final crashlytics = FirebaseCrashlytics.instance;
+    crashlytics.log('[Checkout] checkout started');
+    crashlytics.setCustomKey('shippingZoneId', shippingZoneId);
     int? responseStatusCode;
     void logResult(bool result, String reason) {
       debugPrint('[$traceLabel] checkout() returned $result ($reason)');
       debugPrint(
         '[$traceLabel] checkout() duration: ${(stopwatch.elapsedMilliseconds / 1000).toStringAsFixed(2)}s',
       );
+      crashlytics.log('[Checkout] result=$result reason=$reason');
     }
 
     debugPrint('[$traceLabel] checkout started');
@@ -756,10 +1049,15 @@ class AppState extends ChangeNotifier {
       logResult(false, 'missing_merchant_id');
       return false;
     }
-    final items = _cart.map((i) => {
-      'productId': i['id'],
-      'quantity':  (i['qty'] as int?) ?? 1,
-    }).toList();
+    crashlytics.setCustomKey('storeId', merchantId);
+    crashlytics.setCustomKey('cartItemCount', _cart.length);
+    crashlytics.setCustomKey('cartTotal', cartTotal);
+    final items = _cart
+        .map((i) => {
+              'productId': i['id'],
+              'quantity': (i['qty'] as int?) ?? 1,
+            })
+        .toList();
 
     // Determine payment method
     String paymentMethod = 'CASH_ON_DELIVERY';
@@ -771,27 +1069,35 @@ class AppState extends ChangeNotifier {
         paymentMethod = 'PARTIAL_WALLET';
       }
     }
+    crashlytics.log('[Checkout] paymentMethod=$paymentMethod walletAmount=$walletAmount');
 
     try {
-      final res = await api.post('/customer/orders', {
-        'merchantId':      merchantId,
-        'customerName':    name,
-        'customerPhone':   ApiService.normalisePhone(phone),
-        'deliveryAddress': address,
-        'shippingZoneId':  shippingZoneId,
-        'items':           items,
-        'paymentMethod':   paymentMethod,
-        if (useWallet && walletAmount > 0) 'walletAmount': walletAmount,
-        if (notes != null && notes.isNotEmpty) 'notes': notes,
-      }, auth: true, traceLabel: traceLabel, onStatusCode: (statusCode) {
+      final res = await api.post(
+          '/customer/orders',
+          {
+            'merchantId': merchantId,
+            'customerName': name,
+            'customerPhone': ApiService.normalisePhone(phone),
+            'deliveryAddress': address,
+            'shippingZoneId': shippingZoneId,
+            'items': items,
+            'paymentMethod': paymentMethod,
+            if (useWallet && walletAmount > 0) 'walletAmount': walletAmount,
+            if (notes != null && notes.isNotEmpty) 'notes': notes,
+          },
+          auth: true,
+          traceLabel: traceLabel, onStatusCode: (statusCode) {
         responseStatusCode = statusCode;
       });
       _checkingOut = false;
 
       // ── Success ────────────────────────────────────────────────────────────
       if (res is Map && res['id'] != null) {
+        final orderId = res['id'] as String;
+        crashlytics.log('[Checkout] order created orderId=$orderId');
+        crashlytics.setCustomKey('orderId', orderId);
         unawaited(AnalyticsService.instance.logPurchase(
-          orderId: res['id'] as String,
+          orderId: orderId,
           totalPrice: cartTotal,
           itemCount: _cart.length,
         ));
@@ -876,11 +1182,11 @@ class AppState extends ChangeNotifier {
   }
 
   // ── Orders ────────────────────────────────────────────────────────────────────
-  List<dynamic> _orders        = [];
-  bool          _loadingOrders = false;
+  List<dynamic> _orders = [];
+  bool _loadingOrders = false;
 
-  List<dynamic> get orders        => _orders;
-  bool          get loadingOrders => _loadingOrders;
+  List<dynamic> get orders => _orders;
+  bool get loadingOrders => _loadingOrders;
 
   Future<void> loadOrders() async {
     if (!isLoggedIn) return;
@@ -920,9 +1226,14 @@ class AppState extends ChangeNotifier {
     try {
       final api = ApiService(token: _token);
       final res = await api.patch(
-        '/customer/orders/$orderId/cancel', {}, auth: true,
+        '/customer/orders/$orderId/cancel',
+        {},
+        auth: true,
       );
-      if (res != null) { await loadOrders(); return true; }
+      if (res != null) {
+        await loadOrders();
+        return true;
+      }
       return false;
     } catch (_) {
       return false;
@@ -930,18 +1241,21 @@ class AppState extends ChangeNotifier {
   }
 
   // ── Search ────────────────────────────────────────────────────────────────────
-  List<dynamic> _searchResults  = [];
-  bool          _searching      = false;
-  String        _lastQuery      = '';
+  List<dynamic> _searchResults = [];
+  bool _searching = false;
+  String _lastQuery = '';
 
   List<dynamic> get searchResults => _searchResults;
-  bool          get searching     => _searching;
+  bool get searching => _searching;
 
   Future<void> search(String q) async {
     if (q.trim() == _lastQuery) return;
-    _lastQuery     = q.trim();
+    _lastQuery = q.trim();
     _searchResults = [];
-    if (q.trim().isEmpty) { notifyListeners(); return; }
+    if (q.trim().isEmpty) {
+      notifyListeners();
+      return;
+    }
     _searching = true;
     notifyListeners();
     try {
@@ -957,7 +1271,7 @@ class AppState extends ChangeNotifier {
   }
 
   void clearSearch() {
-    _lastQuery     = '';
+    _lastQuery = '';
     _searchResults = [];
     notifyListeners();
   }

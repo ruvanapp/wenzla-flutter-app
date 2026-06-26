@@ -1,5 +1,6 @@
 import 'package:facebook_app_events/facebook_app_events.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 
 /// Centralised analytics facade.
@@ -99,8 +100,16 @@ class AnalyticsService {
   Future<void> _safe(Future<void> Function() action) async {
     try {
       await action();
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('[Analytics] error: $e');
+      if (!kDebugMode) {
+        FirebaseCrashlytics.instance.recordError(
+          e,
+          stack,
+          reason: 'Analytics event failed',
+          fatal: false,
+        );
+      }
     }
   }
 }
